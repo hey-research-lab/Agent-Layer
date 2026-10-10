@@ -19,6 +19,7 @@ LOCAL_WDK_EVM_HOSTS = {"127.0.0.1", "localhost", "::1"}
 # providers, but it is too short for this local wallet boundary.
 MIN_LOCAL_WDK_EVM_TIMEOUT_SECONDS = 60.0
 LONG_RUNNING_POST_PATHS = {
+    "/v1/evm/imd/approve/send",
     "/v1/evm/aave/supply/send",
     "/v1/evm/aave/withdraw/send",
     "/v1/evm/aave/borrow/send",

@@ -570,6 +570,38 @@ class WdkEvmLocalWalletBackend(AgentWalletBackend):
         except ValueError as exc:
             raise WalletBackendError("wdk-evm-wallet returned an invalid x402 EVM signature.") from exc
 
+    async def _imd_post(self, path: str, extra: dict[str, Any]) -> dict[str, Any]:
+        return await self.client.post(
+            path,
+            {
+                "walletId": self.wallet_id,
+                "accountIndex": self.account_index,
+                "network": self.network,
+                **extra,
+            },
+        )
+
+    async def get_imd_account_state(self) -> dict[str, Any]:
+        return await self._imd_post("/v1/evm/imd/state", {})
+
+    async def sign_imd_permit2(self, permit: dict[str, Any]) -> dict[str, Any]:
+        data = await self._imd_post("/v1/evm/imd/permit2/sign", {"permit": permit})
+        if not str(data.get("signature") or "").startswith("0x"):
+            raise WalletBackendError("wdk-evm-wallet did not return an IMD Permit2 signature.")
+        return data
+
+    async def sign_imd_quote_approval(self, quote_approval: dict[str, Any]) -> dict[str, Any]:
+        data = await self._imd_post("/v1/evm/imd/quote-approval/sign", {"quoteApproval": quote_approval})
+        if not str(data.get("signature") or "").startswith("0x"):
+            raise WalletBackendError("wdk-evm-wallet did not return an IMD quote approval signature.")
+        return data
+
+    async def quote_imd_permit2_approval(self, amount_raw: str) -> dict[str, Any]:
+        return await self._imd_post("/v1/evm/imd/approve/quote", {"amount": str(amount_raw)})
+
+    async def approve_imd_for_permit2(self, amount_raw: str) -> dict[str, Any]:
+        return await self._imd_post("/v1/evm/imd/approve/send", {"amount": str(amount_raw)})
+
     async def sign_message(self, message: bytes | str) -> str:
         text = message.decode("utf-8") if isinstance(message, bytes) else str(message)
         if not text:
