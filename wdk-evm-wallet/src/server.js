@@ -692,6 +692,36 @@ export async function startServer(config = loadConfig()) {
         return sendJson(response, 200, { ok: true, data });
       }
 
+      if (method === "POST" && url.pathname === "/v1/evm/imd/permit2/sign") {
+        const body = await withResolvedNetwork(await withResolvedSeed(await readJsonBody(request)));
+        const data = await service.signImdPermit2(body);
+        return sendJson(response, 200, { ok: true, data });
+      }
+
+      if (method === "POST" && url.pathname === "/v1/evm/imd/quote-approval/sign") {
+        const body = await withResolvedNetwork(await withResolvedSeed(await readJsonBody(request)));
+        const data = await service.signImdQuoteApproval(body);
+        return sendJson(response, 200, { ok: true, data });
+      }
+
+      if (method === "POST" && url.pathname === "/v1/evm/imd/state") {
+        const body = await withResolvedNetwork(await withResolvedSeed(await readJsonBody(request)));
+        const data = await service.getImdAccountState(body);
+        return sendJson(response, 200, { ok: true, data });
+      }
+
+      if (method === "POST" && url.pathname === "/v1/evm/imd/approve/quote") {
+        const body = await withResolvedNetwork(await withResolvedSeed(await readJsonBody(request)));
+        const data = await service.quoteImdPermit2Approval(body);
+        return sendJson(response, 200, { ok: true, data });
+      }
+
+      if (method === "POST" && url.pathname === "/v1/evm/imd/approve/send") {
+        const body = await withResolvedNetwork(await withResolvedSeed(await readJsonBody(request)));
+        const data = await service.approveImdForPermit2(body);
+        return sendJson(response, 200, { ok: true, data });
+      }
+
       if (method === "POST" && url.pathname === "/v1/evm/message/sign") {
         const body = await withResolvedNetwork(await withResolvedSeed(await readJsonBody(request)));
         const data = await service.signPersonalMessage(body);

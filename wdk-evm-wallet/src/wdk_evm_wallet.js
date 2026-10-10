@@ -14,6 +14,14 @@ import {
   recordTransactionSent,
   updateTransactionConfirmationStatus,
 } from "./pending_transactions.js";
+import {
+  IMD_CHAIN_ID,
+  IMD_TOKEN_ADDRESS,
+  PERMIT2_ADDRESS as IMD_PERMIT2_ADDRESS,
+  buildImdPermit2TypedData,
+  buildImdQuoteApprovalTypedData,
+  normalizeImdAllowanceAmount,
+} from "./imd.js";
 
 const ERC20_NAME_SELECTOR = "0x06fdde03";
 const ERC20_SYMBOL_SELECTOR = "0x95d89b41";
@@ -4664,6 +4672,154 @@ export class WdkEvmWalletService {
         address: signerAddress,
         primaryType: typedData.primaryType,
         signature,
+        source: "wdk-wallet-evm",
+      };
+    });
+  }
+
+  async signImdPermit2({ seedPhrase, accountIndex = 0, network, permit }) {
+    return this.#withAccount({ seedPhrase, accountIndex, network }, async (account, runtimeConfig) => {
+      const typedData = buildImdPermit2TypedData(permit, runtimeConfig);
+      const signerAddress = normalizeAddress(await account.getAddress(), "accountAddress");
+      const signature = await account.signTypedData({
+        domain: typedData.domain,
+        types: typedData.types,
+        message: typedData.message,
+      });
+      return {
+        network: runtimeConfig.network,
+        chainId: runtimeConfig.chainId,
+        accountIndex,
+        address: signerAddress,
+        primaryType: typedData.primaryType,
+        signature,
+        source: "wdk-wallet-evm",
+      };
+    });
+  }
+
+  async signImdQuoteApproval({ seedPhrase, accountIndex = 0, network, quoteApproval }) {
+    return this.#withAccount({ seedPhrase, accountIndex, network }, async (account, runtimeConfig) => {
+      const typedData = buildImdQuoteApprovalTypedData(quoteApproval, runtimeConfig);
+      const signerAddress = normalizeAddress(await account.getAddress(), "accountAddress");
+      const signature = await account.signTypedData({
+        domain: typedData.domain,
+        types: typedData.types,
+        message: typedData.message,
+      });
+      return {
+        network: runtimeConfig.network,
+        chainId: runtimeConfig.chainId,
+        accountIndex,
+        address: signerAddress,
+        primaryType: typedData.primaryType,
+        signature,
+        source: "wdk-wallet-evm",
+      };
+    });
+  }
+
+  async getImdAccountState({ seedPhrase, address, accountIndex = 0, network }) {
+    return this.#withReadableAccount({ seedPhrase, address, accountIndex, network }, async (account, runtimeConfig) => {
+      if (Number(runtimeConfig.chainId) !== IMD_CHAIN_ID) {
+        throw createTaggedError("IMD lives on Ethereum mainnet; use network=ethereum.", "imd_wrong_network");
+      }
+      const owner = normalizeAddress(await account.getAddress(), "accountAddress");
+      const [imdBalance, permit2Allowance, ethBalance] = await Promise.all([
+        account.getTokenBalance(IMD_TOKEN_ADDRESS),
+        account.getAllowance(IMD_TOKEN_ADDRESS, IMD_PERMIT2_ADDRESS),
+        account.getBalance(),
+      ]);
+      return {
+        network: runtimeConfig.network,
+        chainId: runtimeConfig.chainId,
+        address: owner,
+        token: IMD_TOKEN_ADDRESS,
+        permit2: IMD_PERMIT2_ADDRESS,
+        imdBalanceRaw: BigInt(imdBalance).toString(),
+        permit2AllowanceRaw: BigInt(permit2Allowance).toString(),
+        ethBalanceWei: BigInt(ethBalance).toString(),
+        source: "wdk-wallet-evm",
+      };
+    });
+  }
+
+  async quoteImdPermit2Approval({ seedPhrase, accountIndex = 0, network, amount }) {
+    return this.#withAccount({ seedPhrase, accountIndex, network }, async (account, runtimeConfig) => {
+      if (Number(runtimeConfig.chainId) !== IMD_CHAIN_ID) {
+        throw createTaggedError("IMD lives on Ethereum mainnet; use network=ethereum.", "imd_wrong_network");
+      }
+      const approveAmount = normalizeImdAllowanceAmount(amount);
+      const owner = normalizeAddress(await account.getAddress(), "accountAddress");
+      const tx = {
+        to: IMD_TOKEN_ADDRESS,
+        value: 0n,
+        data: ERC20_APPROVE_INTERFACE.encodeFunctionData("approve", [IMD_PERMIT2_ADDRESS, approveAmount]),
+      };
+      const [quote, currentAllowance, ethBalance] = await Promise.all([
+        account.quoteSendTransaction(tx),
+        account.getAllowance(IMD_TOKEN_ADDRESS, IMD_PERMIT2_ADDRESS),
+        account.getBalance(),
+      ]);
+      return {
+        network: runtimeConfig.network,
+        chainId: runtimeConfig.chainId,
+        address: owner,
+        token: IMD_TOKEN_ADDRESS,
+        spender: IMD_PERMIT2_ADDRESS,
+        amountRaw: approveAmount.toString(),
+        currentAllowanceRaw: BigInt(currentAllowance).toString(),
+        ethBalanceWei: BigInt(ethBalance).toString(),
+        estimatedFeeWei: BigInt(quote?.fee ?? 0).toString(),
+        source: "wdk-wallet-evm",
+      };
+    });
+  }
+
+  async approveImdForPermit2({ seedPhrase, accountIndex = 0, network, amount }) {
+    return this.#withAccount({ seedPhrase, accountIndex, network }, async (account, runtimeConfig) => {
+      if (Number(runtimeConfig.chainId) !== IMD_CHAIN_ID) {
+        throw createTaggedError("IMD lives on Ethereum mainnet; use network=ethereum.", "imd_wrong_network");
+      }
+      const approveAmount = normalizeImdAllowanceAmount(amount);
+      const owner = normalizeAddress(await account.getAddress(), "accountAddress");
+      const data = ERC20_APPROVE_INTERFACE.encodeFunctionData("approve", [IMD_PERMIT2_ADDRESS, approveAmount]);
+      const idempotencyKey = deriveIdempotencyKey(() => ({
+        from: owner,
+        to: IMD_TOKEN_ADDRESS,
+        data,
+        value: "0",
+        chainId: runtimeConfig.chainId,
+      }));
+      const duplicateCheck = await checkIdempotencyIfConfigured(runtimeConfig.dataDir, idempotencyKey);
+      const result = await account.approve({
+        token: IMD_TOKEN_ADDRESS,
+        spender: IMD_PERMIT2_ADDRESS,
+        amount: approveAmount,
+      });
+      await recordTransactionSentIfConfigured(runtimeConfig.dataDir, {
+        key: idempotencyKey,
+        txHash: result.hash,
+        network: runtimeConfig.network,
+        operation: "imd_permit2_approve",
+      });
+      const confirmation = await confirmTransaction(runtimeConfig, result.hash, {
+        operationLabel: "IMD Permit2 approval",
+        failureCode: "imd_approve_reverted",
+      });
+      return {
+        network: runtimeConfig.network,
+        chainId: runtimeConfig.chainId,
+        accountIndex,
+        address: owner,
+        token: IMD_TOKEN_ADDRESS,
+        spender: IMD_PERMIT2_ADDRESS,
+        amountRaw: approveAmount.toString(),
+        result,
+        confirmed: confirmation.status === "confirmed",
+        tx_hash: result.hash,
+        confirmation_status: confirmation.status,
+        ...(duplicateCheck ? { duplicate_warning: duplicateCheck.duplicate } : {}),
         source: "wdk-wallet-evm",
       };
     });
