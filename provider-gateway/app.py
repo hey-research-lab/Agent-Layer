@@ -1,6 +1,7 @@
 import html
 import json
 import os
+import re
 import time
 from collections import deque
 from typing import Any
@@ -105,6 +106,14 @@ def _latency_bucket(started: float) -> str:
     if elapsed_ms < 2000:
         return "500ms_2s"
     return "gt_2s"
+
+
+_RPC_METHOD_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,63}")
+
+
+def _rejected_method_label(method: str) -> str:
+    """Name a rejected RPC method for usage stats without unbounded junk keys."""
+    return method if _RPC_METHOD_NAME.fullmatch(method or "") else "other"
 
 
 def _record_rpc_usage(
@@ -1274,6 +1283,14 @@ async def rpc_proxy(request: Request) -> JSONResponse:
     if not method:
         return _json_error("Field 'method' is required", 400)
     if method not in ALLOWED_RPC_METHODS:
+        _record_rpc_usage(
+            endpoint="solana_rpc",
+            network=str(body.get("network", "mainnet")).strip().lower() or "mainnet",
+            provider=str(body.get("provider", "auto")).strip().lower() or "auto",
+            method=_rejected_method_label(method),
+            status_code=403,
+            started=started,
+        )
         return _json_error(
             f"RPC method '{method}' is not allowed",
             403,
@@ -1354,6 +1371,14 @@ async def evm_rpc_proxy(request: Request) -> JSONResponse:
     except TypeError as exc:
         return _json_error(str(exc), 400)
     except PermissionError as exc:
+        _record_rpc_usage(
+            endpoint="evm_rpc",
+            network=str(request.path_params.get("network", "")).strip().lower(),
+            provider=str(request.query_params.get("provider", "auto")).strip().lower() or "auto",
+            method=_rejected_method_label(str(exc)),
+            status_code=403,
+            started=started,
+        )
         return _json_error(
             f"EVM RPC method '{str(exc)}' is not allowed",
             403,

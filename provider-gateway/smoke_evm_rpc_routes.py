@@ -154,6 +154,10 @@ def main() -> None:
         gateway_app.telemetry_store.flush_rpc_usage()
         rpc_usage = gateway_app.telemetry_store.rpc_usage_summary(30)
         assert rpc_usage["total_calls"] >= 5
+        rejected = {row["key"] for row in rpc_usage["by_method"]}
+        assert "debug_traceTransaction" in rejected, rpc_usage["by_method"]
+        assert gateway_app._rejected_method_label("x" * 200) == "other"
+        assert gateway_app._rejected_method_label("eth_foo; DROP") == "other"
         assert {"key": "evm_rpc", "calls": rpc_usage["total_calls"]} in rpc_usage["by_endpoint"]
         assert any(item["key"] == "eth_chainId" for item in rpc_usage["by_method"])
         assert any(item["key"] == "alchemy" for item in rpc_usage["by_provider"])
