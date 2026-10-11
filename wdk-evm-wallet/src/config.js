@@ -414,7 +414,7 @@ export function loadConfig(env = process.env) {
       String(env.MORPHO_API_BASE_URL ?? "").trim() || "https://api.morpho.org/graphql",
     lifiApiBaseUrl: String(env.LIFI_API_BASE_URL ?? "").trim() || "https://li.quest/v1",
     lifiApiKey: String(env.LIFI_API_KEY ?? "").trim(),
-    lifiIntegrator: String(env.LIFI_INTEGRATOR ?? "").trim() || "openclaw",
+    lifiIntegrator: String(env.LIFI_INTEGRATOR ?? "").trim() || "agentlayer",
     lifiDefaultDenyBridges: String(env.LIFI_DEFAULT_DENY_BRIDGES ?? "").trim() || "mayan",
     lidoApiBaseUrl: String(env.LIDO_API_BASE_URL ?? "").trim() || "https://eth-api.lido.fi/v1",
     lidoReferralAddress: String(env.LIDO_REFERRAL_ADDRESS ?? "").trim(),

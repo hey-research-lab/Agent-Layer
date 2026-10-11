@@ -6024,7 +6024,7 @@ export class WdkEvmWalletService {
       fromAddress: address,
       toAddress: swapRequest.destinationAddress,
       slippage: String(swapRequest.slippage),
-      integrator: this.config.lifiIntegrator || "openclaw",
+      integrator: this.config.lifiIntegrator || "agentlayer",
     });
     const denyBridges = mergeBridgeLists(
       this.config.lifiDefaultDenyBridges,

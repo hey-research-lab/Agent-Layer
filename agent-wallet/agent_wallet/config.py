@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     jupiter_api_key: str = ""
     lifi_api_base_url: str = "https://li.quest/v1"
     lifi_api_key: str = ""
-    lifi_integrator: str = "openclaw"
+    lifi_integrator: str = "agentlayer"
     lifi_default_deny_bridges: str = "mayan"
     kamino_api_base_url: str = "https://api.kamino.finance"
     kamino_program_id: str = "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
