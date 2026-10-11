@@ -179,6 +179,19 @@ def _merge_bridge_csv(*values: str | list[str] | tuple[str, ...] | None) -> str 
     return ",".join(items) if items else None
 
 
+MAX_INTEGRATOR_FEE = 0.01
+
+
+def _integrator_fee() -> str | None:
+    """AgentLayer's LI.FI fee as a decimal string, or None when disabled."""
+    fee = float(settings.lifi_fee or 0)
+    if fee < 0 or fee > MAX_INTEGRATOR_FEE:
+        raise ProviderError("lifi", f"LIFI_FEE must be between 0 and {MAX_INTEGRATOR_FEE}.")
+    if fee == 0:
+        return None
+    return format(fee, "f").rstrip("0").rstrip(".")
+
+
 def _clean_params(params: dict[str, Any]) -> dict[str, Any]:
     cleaned: dict[str, Any] = {}
     for key, value in params.items():
@@ -240,6 +253,7 @@ async def fetch_quote(
             "toAddress": str(to_address).strip(),
             "slippage": slippage,
             "integrator": (integrator or settings.lifi_integrator).strip(),
+            "fee": _integrator_fee(),
             "allowBridges": _csv(allow_bridges),
             "denyBridges": effective_deny_bridges,
             "preferBridges": _csv(prefer_bridges),

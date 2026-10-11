@@ -6026,6 +6026,9 @@ export class WdkEvmWalletService {
       slippage: String(swapRequest.slippage),
       integrator: this.config.lifiIntegrator || "agentlayer",
     });
+    if (Number(this.config.lifiFee) > 0) {
+      params.set("fee", String(this.config.lifiFee));
+    }
     const denyBridges = mergeBridgeLists(
       this.config.lifiDefaultDenyBridges,
       swapRequest.denyBridges,

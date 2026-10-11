@@ -105,6 +105,20 @@ function parseInteger(value, fallback, fieldName) {
   return parsed;
 }
 
+// AgentLayer's LI.FI integrator fee, a fraction of fromAmount (0.0001 = 0.01%).
+// Capped at 1% so a bad env value can never turn swaps into a large charge.
+export const DEFAULT_LIFI_FEE = "0.0001";
+const MAX_LIFI_FEE = 0.01;
+
+function parseLifiFee(value) {
+  const normalized = String(value ?? "").trim() || DEFAULT_LIFI_FEE;
+  const parsed = Number(normalized);
+  if (!/^\d+(\.\d+)?$/.test(normalized) || !Number.isFinite(parsed) || parsed < 0 || parsed > MAX_LIFI_FEE) {
+    throw new Error(`LIFI_FEE must be a decimal fraction between 0 and ${MAX_LIFI_FEE}.`);
+  }
+  return normalized;
+}
+
 function parseNonNegativeInteger(value, fallback, fieldName) {
   const normalized = String(value ?? "").trim();
   if (!normalized) {
@@ -415,6 +429,7 @@ export function loadConfig(env = process.env) {
     lifiApiBaseUrl: String(env.LIFI_API_BASE_URL ?? "").trim() || "https://li.quest/v1",
     lifiApiKey: String(env.LIFI_API_KEY ?? "").trim(),
     lifiIntegrator: String(env.LIFI_INTEGRATOR ?? "").trim() || "agentlayer",
+    lifiFee: parseLifiFee(env.LIFI_FEE),
     lifiDefaultDenyBridges: String(env.LIFI_DEFAULT_DENY_BRIDGES ?? "").trim() || "mayan",
     lidoApiBaseUrl: String(env.LIDO_API_BASE_URL ?? "").trim() || "https://eth-api.lido.fi/v1",
     lidoReferralAddress: String(env.LIDO_REFERRAL_ADDRESS ?? "").trim(),

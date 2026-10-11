@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     lifi_api_base_url: str = "https://li.quest/v1"
     lifi_api_key: str = ""
     lifi_integrator: str = "agentlayer"
+    # AgentLayer integrator fee as a fraction of fromAmount (0.0001 = 0.01%).
+    lifi_fee: float = 0.0001
     lifi_default_deny_bridges: str = "mayan"
     kamino_api_base_url: str = "https://api.kamino.finance"
     kamino_program_id: str = "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
