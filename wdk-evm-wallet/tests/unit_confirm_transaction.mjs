@@ -136,3 +136,37 @@ test("a reverted transfer throws native_transfer_reverted, not a generic error",
     setRpcRequestForTests(null);
   }
 });
+
+test("resolveTransactionStatus reports pending_or_unknown when the pending lookup is refused", async () => {
+  const { resolveTransactionStatus } = __testables;
+  setRpcRequestForTests(async (_url, method) => {
+    if (method === "eth_getTransactionReceipt") return null;
+    throw new Error("RPC request failed with HTTP 403.");
+  });
+  try {
+    const result = await resolveTransactionStatus("http://example.invalid", "0xabc");
+    assert.equal(result.status, "pending_or_unknown");
+    assert.equal(result.receipt, null);
+    assert.match(result.note, /HTTP 403/);
+  } finally {
+    setRpcRequestForTests(null);
+  }
+});
+
+test("resolveTransactionStatus distinguishes confirmed, reverted, pending and not_found", async () => {
+  const { resolveTransactionStatus } = __testables;
+  const cases = [
+    [{ status: "0x1" }, null, "confirmed"],
+    [{ status: "0x0" }, null, "reverted"],
+    [null, { hash: "0xabc" }, "pending"],
+    [null, null, "not_found"],
+  ];
+  for (const [receipt, tx, expected] of cases) {
+    setRpcRequestForTests(async (_url, method) => (method === "eth_getTransactionReceipt" ? receipt : tx));
+    try {
+      assert.equal((await resolveTransactionStatus("http://example.invalid", "0xabc")).status, expected);
+    } finally {
+      setRpcRequestForTests(null);
+    }
+  }
+});

@@ -1873,6 +1873,31 @@ async function rpcRequest(providerUrl, method, params = []) {
 
 let activeRpcRequest = rpcRequest;
 
+// A mined transaction is decided by its receipt. Before it is mined, the only
+// way to tell "pending" from "never seen" is eth_getTransactionByHash; when
+// that lookup fails (a restricted RPC, a flaky node) the transaction is still
+// most likely in flight, so report that instead of failing the whole check.
+async function resolveTransactionStatus(providerUrl, txHash) {
+  const receipt = await activeRpcRequest(providerUrl, "eth_getTransactionReceipt", [txHash]);
+  if (receipt) {
+    const status = String(receipt.status || "").toLowerCase() === "0x0" ? "reverted" : "confirmed";
+    return { receipt, status };
+  }
+  try {
+    const pendingTx = await activeRpcRequest(providerUrl, "eth_getTransactionByHash", [txHash]);
+    return { receipt: null, status: pendingTx ? "pending" : "not_found" };
+  } catch (error) {
+    return {
+      receipt: null,
+      status: "pending_or_unknown",
+      note:
+        "No receipt yet, and the pending-transaction lookup failed " +
+        `(${error instanceof Error ? error.message : String(error)}). ` +
+        "Check again shortly before resending.",
+    };
+  }
+}
+
 function setRpcRequestForTests(override) {
   activeRpcRequest = override || rpcRequest;
 }
@@ -2133,14 +2158,7 @@ export class WdkEvmWalletService {
   async getTransactionReceipt({ txHash, network }) {
     const runtimeConfig = this.#resolveRuntimeConfig(network);
     const validHash = assertValidHash(txHash, "txHash");
-    const receipt = await rpcRequest(runtimeConfig.providerUrl, "eth_getTransactionReceipt", [validHash]);
-    let status;
-    if (receipt) {
-      status = String(receipt.status || "").toLowerCase() === "0x0" ? "reverted" : "confirmed";
-    } else {
-      const pendingTx = await rpcRequest(runtimeConfig.providerUrl, "eth_getTransactionByHash", [validHash]);
-      status = pendingTx ? "pending" : "not_found";
-    }
+    const { receipt, status, note } = await resolveTransactionStatus(runtimeConfig.providerUrl, validHash);
     return {
       network: runtimeConfig.network,
       chainId: runtimeConfig.chainId,
@@ -2148,6 +2166,7 @@ export class WdkEvmWalletService {
       receipt,
       found: receipt !== null,
       status,
+      ...(note ? { note } : {}),
       source: "rpc",
     };
   }
@@ -9239,5 +9258,6 @@ export const __testables = {
   uniswapSlippagePercentFromBps,
   normalizeUniswapPermitData,
   confirmTransaction,
+  resolveTransactionStatus,
   setRpcRequestForTests,
 };
