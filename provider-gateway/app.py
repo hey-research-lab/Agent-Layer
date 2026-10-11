@@ -53,6 +53,7 @@ ALLOWED_EVM_RPC_METHODS = {
     "eth_getBalance",
     "eth_getBlockByNumber",
     "eth_getCode",
+    "eth_getTransactionByHash",
     "eth_getTransactionCount",
     "eth_getTransactionReceipt",
     "eth_maxPriorityFeePerGas",

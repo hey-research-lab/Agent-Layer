@@ -133,6 +133,13 @@ def main() -> None:
             "params": ["0x1111111111111111111111111111111111111111", "erc20"],
         }
 
+        pending_tx = client.post(
+            "/v1/evm/rpc/ethereum?provider=alchemy&token=test-token",
+            json={"jsonrpc": "2.0", "id": 14, "method": "eth_getTransactionByHash", "params": ["0x" + "ab" * 32]},
+        )
+        assert pending_tx.status_code == 200, pending_tx.text
+        assert seen["post"]["json_body"]["method"] == "eth_getTransactionByHash"
+
         forbidden_method = client.post(
             "/v1/evm/rpc/ethereum?provider=alchemy&token=test-token",
             json={"jsonrpc": "2.0", "id": 3, "method": "debug_traceTransaction", "params": []},
