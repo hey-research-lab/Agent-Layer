@@ -1,6 +1,6 @@
 ---
 description: Show the connected Solana wallet portfolio directly in chat.
-allowed-tools: mcp__agent_wallet__get_wallet_portfolio
+allowed-tools: mcp__plugin_wallet_agent-wallet__get_wallet_portfolio
 disable-model-invocation: true
 ---
 

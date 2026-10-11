@@ -1,6 +1,6 @@
 ---
 description: Disable AgentLayer autonomous wallet execution (every write tool).
-allowed-tools: mcp__agent_wallet__agentlayer_autonomous_revoke, mcp__agent_wallet__agentlayer_autonomous_status
+allowed-tools: mcp__plugin_wallet_agent-wallet__agentlayer_autonomous_revoke, mcp__plugin_wallet_agent-wallet__agentlayer_autonomous_status
 disable-model-invocation: true
 ---
 

@@ -1,6 +1,6 @@
 ---
 description: Enable AgentLayer autonomous wallet execution (every write tool) without per-transaction approvals.
-allowed-tools: AskUserQuestion, mcp__agent_wallet__agentlayer_autonomous_approve, mcp__agent_wallet__agentlayer_autonomous_status
+allowed-tools: AskUserQuestion, mcp__plugin_wallet_agent-wallet__agentlayer_autonomous_approve, mcp__plugin_wallet_agent-wallet__agentlayer_autonomous_status
 disable-model-invocation: true
 ---
 

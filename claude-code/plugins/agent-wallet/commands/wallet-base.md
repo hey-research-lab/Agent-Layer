@@ -1,6 +1,6 @@
 ---
 description: Show the connected Base EVM wallet portfolio directly in chat and switch the active wallet backend to Base.
-allowed-tools: mcp__agent_wallet__get_wallet_overview, mcp__agent_wallet__set_wallet_backend
+allowed-tools: mcp__plugin_wallet_agent-wallet__get_wallet_overview, mcp__plugin_wallet_agent-wallet__set_wallet_backend
 disable-model-invocation: true
 ---
 

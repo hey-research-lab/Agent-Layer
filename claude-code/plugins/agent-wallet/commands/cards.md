@@ -1,6 +1,6 @@
 ---
 description: Preview and buy a Laso Finance prepaid card (US or international) paid for via x402 from the connected wallet.
-allowed-tools: AskUserQuestion, mcp__agent_wallet__x402_preview_request, mcp__agent_wallet__x402_pay_request, mcp__agent_wallet__get_active_wallet_backend
+allowed-tools: AskUserQuestion, mcp__plugin_wallet_agent-wallet__x402_preview_request, mcp__plugin_wallet_agent-wallet__x402_pay_request, mcp__plugin_wallet_agent-wallet__get_active_wallet_backend
 disable-model-invocation: true
 ---
 
