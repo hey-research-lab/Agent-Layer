@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## v0.1.118 - 2026-10-12
+
+- **New `/imd` command (Claude Code) and `imd` skill (Codex): paid work on
+  imd.fun from the EVM wallet.** Research reports, repo audits, websites,
+  images, multi-step jobs and schedules, paid in IMD with x402 + Permit2 on
+  Ethereum mainnet. Every payment and the exact-amount Permit2 allowance go
+  through preview and explicit confirmation; the IMD token, treasury and API
+  host are pinned, with limits of 5 IMD per payment and 5 IMD per 24 hours.
+  Free request checks and public repo import cost nothing.
+- **LI.FI routes now report `agentlayer` as the integrator and carry a 0.01%
+  integrator fee** (`LIFI_FEE`, capped at 1%; `0` disables it).
+- **EVM transaction receipts no longer fail when the pending lookup is
+  unavailable.** The status falls back to `pending_or_unknown` with a note.
+- Claude Code commands now use the plugin MCP tool prefix in `allowed-tools`,
+  so their wallet tools no longer prompt for permission on every call.
 - Added a public Git marketplace source for the local AgentLayer wallet plugin
   in ChatGPT desktop and Codex. It is an additional two-command install path;
   first MCP use prepares the existing npm wallet runtime when needed. The npm
