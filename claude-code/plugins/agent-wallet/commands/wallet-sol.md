@@ -1,18 +1,33 @@
 ---
-description: Show the connected Solana wallet portfolio directly in chat.
-allowed-tools: mcp__plugin_wallet_agent-wallet__get_wallet_portfolio
+description: Show the connected Solana wallet portfolio directly in chat and switch the active wallet backend to Solana.
+allowed-tools: mcp__plugin_wallet_agent-wallet__get_wallet_overview, mcp__plugin_wallet_agent-wallet__set_wallet_backend
 disable-model-invocation: true
 ---
 
-Show the connected Solana wallet portfolio directly in chat.
+Show the connected Solana wallet portfolio directly in chat, and leave the
+session's active wallet backend switched to Solana so follow-up wallet calls in
+this conversation don't need the backend specified again.
 
-1. Call `get_wallet_portfolio` with:
+1. Call `get_wallet_overview` and `set_wallet_backend` together — they are
+   independent, so issue both in the same turn rather than sequentially. Pass
+   `backend` explicitly to `get_wallet_overview` so the report works even when
+   another backend (e.g. Base/EVM) is currently active:
 
 ```json
-{}
+// get_wallet_overview
+{
+  "backend": "solana"
+}
 ```
 
-2. Format the response as a compact wallet report:
+```json
+// set_wallet_backend
+{
+  "backend": "solana"
+}
+```
+
+2. Format the `get_wallet_overview` response as a compact wallet report:
 
 - state the wallet as `Solana`
 - include `chain`, `network` (or `requested_network` when `network` is absent), `address`, and `total_value_usd` when present
@@ -27,4 +42,10 @@ Show the connected Solana wallet portfolio directly in chat.
 - if no asset rows are available, still report the native balance summary in prose
 - do not include source metadata lines or footer fields such as `source`, `token_discovery_source`, `pricing_source`, or `pricing_errors`
 
-3. Do not suggest transfers, swaps, or other write actions unless the user explicitly asks for them.
+3. After the table, add one short line confirming the session wallet backend
+   is now Solana so the user knows follow-up wallet requests will target it by
+   default. If `set_wallet_backend` failed, add one short warning line instead —
+   note that the portfolio above is still accurate, and that the backend switch
+   can be retried. Never drop the portfolio report because the switch failed.
+
+4. Do not suggest transfers, swaps, or other write actions unless the user explicitly asks for them.
