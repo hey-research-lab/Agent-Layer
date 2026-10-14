@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## v0.1.119 - 2026-10-14
+
+- **`/wallet:wallet-sol` in Claude Code now switches the active wallet backend
+  to Solana.** It previously read the portfolio from whatever backend was
+  active, so after `/wallet:wallet-base` (which is remembered as the default)
+  it failed with `wdk_evm_local does not support portfolio lookup`. The command
+  now fetches the Solana overview explicitly and sets the backend in the same
+  turn, matching `/wallet:wallet-base` and the Codex `wallet-sol` skill.
+
 ## v0.1.118 - 2026-10-12
 
 - **New `/imd` command (Claude Code) and `imd` skill (Codex): paid work on
