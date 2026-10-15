@@ -1199,6 +1199,8 @@ class WdkEvmLocalWalletBackend(AgentWalletBackend):
             "chain_id": int(data.get("chainId") or 0),
             "market_position_count": int(data.get("marketPositionCount") or 0),
             "vault_position_count": int(data.get("vaultPositionCount") or 0),
+            "hidden_dust_vault_position_count": int(data.get("hiddenDustVaultPositionCount") or 0),
+            "dust_threshold_usd": data.get("dustThresholdUsd"),
             "market_positions": list(data.get("marketPositions") or []),
             "vault_positions": list(data.get("vaultPositions") or []),
             "source": "wdk-evm-wallet",

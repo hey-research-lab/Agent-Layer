@@ -272,7 +272,8 @@ test("morpho vault list returns discovery payload", async () => {
       async json() {
         return {
           data: {
-            vaultV2s: {
+            v1: { items: [] },
+            v2: {
               items: [
                 {
                   address: DEFAULT_VAULT_ADDRESS,
@@ -284,10 +285,11 @@ test("morpho vault list returns discovery payload", async () => {
                     symbol: "PYUSD",
                     decimals: 6,
                     name: "PayPal USD",
-                    priceUsd: 1,
+                    price: { usd: 1 },
                     yield: { apr: 0, lookback: 86400 },
                   },
                   chain: { id: 8453, network: "base" },
+                  adapters: { items: [] },
                 },
               ],
             },
@@ -300,14 +302,179 @@ test("morpho vault list returns discovery payload", async () => {
     assert.equal(result.protocol, "morpho");
     assert.equal(result.vaultCount, 1);
     assert.equal(result.vaults[0].address, DEFAULT_VAULT_ADDRESS);
+    assert.equal(result.vaults[0].version, "v2");
+    assert.equal(result.vaults[0].asset.priceUsd, 1);
+    assert.equal("price" in result.vaults[0].asset, false);
+    assert.equal("adapters" in result.vaults[0], false);
     assert.equal(result.listedOnly, true);
   });
 
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].operationName, "MorphoVaultV2List");
-  assert.deepEqual(calls[0].variables.where, { chainId_in: [8453], listed: true });
-  assert.equal(calls[0].variables.orderBy, "TotalAssetsUsd");
+  assert.equal(calls[0].operationName, "MorphoVaultList");
+  assert.deepEqual(calls[0].variables.v1Where, { chainId_in: [8453], listed: true });
+  assert.deepEqual(calls[0].variables.v2Where, { chainId_in: [8453], listed: true });
+  assert.equal(calls[0].variables.v1OrderBy, "TotalAssetsUsd");
+  assert.equal(calls[0].variables.v2OrderBy, "TotalAssetsUsd");
   assert.equal(calls[0].variables.orderDirection, "Desc");
+  // Every APY average must name its window; a bare avgNetApy silently means 6 hours.
+  assert.match(calls[0].query, /avgNetApy7d: avgNetApy\(lookback: SEVEN_DAYS\)/);
+  assert.match(calls[0].query, /avgNetApy30d: avgNetApy\(lookback: THIRTY_DAYS\)/);
+  assert.doesNotMatch(calls[0].query, /\bavgNetApy\s*\n/);
+  assert.doesNotMatch(calls[0].query, /priceUsd/);
+});
+
+test("morpho vault list merges V1 and V2 vaults into one ordered list", async () => {
+  const service = createService();
+  const calls = [];
+
+  await withMockedFetch(async (_url, options) => {
+    calls.push(JSON.parse(String(options?.body || "{}")));
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          data: {
+            v1: {
+              items: [
+                {
+                  address: "0x00000000000000000000000000000000000000a1",
+                  name: "Legacy USDC",
+                  listed: true,
+                  asset: { address: "0xusdc", symbol: "USDC", decimals: 6, price: { usd: 1 } },
+                  chain: { id: 8453, network: "base" },
+                  liquidity: { underlying: "500", usd: 500 },
+                  warnings: [],
+                  state: {
+                    totalAssets: "1000",
+                    totalAssetsUsd: 1000,
+                    fee: 0.1,
+                    apy: 0.05,
+                    netApy: 0.045,
+                    netApyExcludingRewards: 0.04,
+                    avgNetApy7d: 0.044,
+                    avgNetApy7dExcludingRewards: 0.039,
+                    avgNetApy30d: 0.042,
+                    allRewards: [{ supplyApr: 0.005, asset: { address: "0xwell", symbol: "WELL" } }],
+                    curators: [{ name: "Gauntlet" }],
+                  },
+                },
+              ],
+            },
+            v2: {
+              items: [
+                {
+                  address: "0x00000000000000000000000000000000000000b2",
+                  name: "New USDC",
+                  listed: true,
+                  totalAssetsUsd: 3000,
+                  liquidityUsd: 100,
+                  netApy: 0.05,
+                  avgNetApy7d: 0.049,
+                  avgNetApy30d: 0.047,
+                  performanceFee: 0.1,
+                  managementFee: 0,
+                  asset: { address: "0xusdc", symbol: "USDC", decimals: 6, price: { usd: 1 } },
+                  chain: { id: 8453, network: "base" },
+                  adapters: {
+                    items: [
+                      {
+                        __typename: "MetaMorphoAdapter",
+                        metaMorpho: { address: "0x00000000000000000000000000000000000000a1", name: "Legacy USDC" },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        };
+      },
+    };
+  }, async () => {
+    const result = await service.getMorphoVaults({ network: "base", orderBy: "LiquidityUsd", limit: 5 });
+    assert.equal(result.vaultCount, 2);
+    // V1 has no LiquidityUsd ordering server-side; the merged list is still sorted by it.
+    assert.deepEqual(result.vaults.map((vault) => vault.version), ["v1", "v2"]);
+    const [v1, v2] = result.vaults;
+    assert.equal(v1.liquidityUsd, 500);
+    assert.equal(v1.totalAssetsUsd, 1000);
+    assert.equal(v1.performanceFee, 0.1);
+    assert.equal(v1.managementFee, null);
+    assert.equal(v1.netApy, 0.045);
+    assert.equal(v1.avgNetApy7d, 0.044);
+    assert.equal(v1.avgNetApy7dExcludingRewards, 0.039);
+    assert.equal(v1.avgNetApy30d, 0.042);
+    assert.equal(v1.rewards.length, 1);
+    assert.deepEqual(v1.curators, ["Gauntlet"]);
+    assert.equal("state" in v1, false);
+    assert.equal(v2.avgNetApy7d, 0.049);
+    assert.deepEqual(v2.underlyingVaults, [
+      { address: "0x00000000000000000000000000000000000000a1", name: "Legacy USDC", version: "v1" },
+    ]);
+  });
+
+  assert.equal(calls[0].variables.v1OrderBy, "TotalAssetsUsd");
+  assert.equal(calls[0].variables.v2OrderBy, "LiquidityUsd");
+});
+
+test("morpho vault lookup by address finds a V1 vault", async () => {
+  const service = createService();
+  const calls = [];
+
+  await withMockedFetch(async (_url, options) => {
+    calls.push(JSON.parse(String(options?.body || "{}")));
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          data: {
+            v1: {
+              items: [
+                {
+                  address: "0xbeeF010f9cb27031ad51e3333f9aF9C6B1228183",
+                  name: "Steakhouse USDC",
+                  asset: { address: "0xusdc", symbol: "USDC", decimals: 6, price: { usd: 1 } },
+                  metadata: { description: "desc", image: null },
+                  state: {
+                    netApy: 0.035,
+                    avgNetApy7d: 0.0349,
+                    avgNetApy30d: 0.0333,
+                    allocation: [
+                      {
+                        supplyAssetsUsd: 10,
+                        market: {
+                          marketId: DEFAULT_MARKET_ID,
+                          loanAsset: { symbol: "USDC", address: "0xusdc" },
+                          collateralAsset: { symbol: "cbBTC", address: "0xcbbtc" },
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+            v2: { items: [] },
+          },
+        };
+      },
+    };
+  }, async () => {
+    const result = await service.getMorphoVaults({
+      network: "base",
+      vaultAddress: "0xbeeF010f9cb27031ad51e3333f9aF9C6B1228183",
+    });
+    assert.equal(result.found, true);
+    assert.equal(result.vault.version, "v1");
+    assert.equal(result.vault.avgNetApy7d, 0.0349);
+    assert.equal(result.vault.allocation.length, 1);
+    assert.equal(result.vault.allocation[0].market.marketId, DEFAULT_MARKET_ID);
+    assert.equal(result.vault.metadata.description, "desc");
+  });
+
+  assert.equal(calls[0].operationName, "MorphoVaultByAddress");
+  assert.equal(calls[0].variables.chainId, 8453);
 });
 
 test("morpho discovery supports Arc mainnet", async () => {
@@ -347,7 +514,7 @@ test("morpho vault list applies asset filter and custom ordering", async () => {
       ok: true,
       status: 200,
       async json() {
-        return { data: { vaultV2s: { items: [] } } };
+        return { data: { v1: { items: [] }, v2: { items: [] } } };
       },
     };
   }, async () => {
@@ -364,11 +531,13 @@ test("morpho vault list applies asset filter and custom ordering", async () => {
   });
 
   assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0].variables.where, {
+  assert.deepEqual(calls[0].variables.v1Where, {
     chainId_in: [8453],
     assetAddress_in: ["0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"],
   });
-  assert.equal(calls[0].variables.orderBy, "Apy");
+  assert.deepEqual(calls[0].variables.v2Where, calls[0].variables.v1Where);
+  assert.equal(calls[0].variables.v1OrderBy, "Apy");
+  assert.equal(calls[0].variables.v2OrderBy, "Apy");
   assert.equal(calls[0].variables.orderDirection, "Asc");
 });
 
@@ -435,12 +604,13 @@ test("morpho market by id returns detailed payload", async () => {
             marketById: {
               marketId: DEFAULT_MARKET_ID,
               lltv: "860000000000000000",
-              loanAsset: { address: "0xloan", symbol: "USDC", decimals: 6, name: "USD Coin" },
+              loanAsset: { address: "0xloan", symbol: "USDC", decimals: 6, name: "USD Coin", price: { usd: 1 } },
               collateralAsset: {
                 address: "0xcollateral",
                 symbol: "cbBTC",
                 decimals: 8,
                 name: "Coinbase Wrapped BTC",
+                price: { usd: 65000 },
               },
               supplyingVaultV2s: [
                 { address: "0xvault1", name: "Steakhouse USDC", symbol: "steakUSDC" },
@@ -459,6 +629,9 @@ test("morpho market by id returns detailed payload", async () => {
     assert.equal(result.found, true);
     assert.equal(result.market.marketId, DEFAULT_MARKET_ID);
     assert.equal(result.market.supplyingVaultV2s.length, 1);
+    assert.equal(result.market.loanAsset.priceUsd, 1);
+    assert.equal(result.market.collateralAsset.priceUsd, 65000);
+    assert.equal("price" in result.market.collateralAsset, false);
   });
 });
 
@@ -501,6 +674,28 @@ test("morpho positions returns user overview from explicit address", async () =>
                   },
                 },
               ],
+              vaultPositions: [
+                {
+                  vault: {
+                    address: "0x00000000000000000000000000000000000000a1",
+                    name: "Steakhouse USDC",
+                    symbol: "steakUSDC",
+                    asset: { address: "0xusdc", symbol: "USDC", decimals: 6, name: "USD Coin" },
+                    state: { netApy: 0.035, avgNetApy7d: 0.0349, avgNetApy30d: 0.0333 },
+                  },
+                  state: { shares: "9", assets: "250000000", assetsUsd: 250 },
+                },
+                {
+                  vault: {
+                    address: "0x00000000000000000000000000000000000000d1",
+                    name: "Seeded Vault",
+                    symbol: "seed",
+                    asset: { address: "0xusdc", symbol: "USDC", decimals: 6, name: "USD Coin" },
+                    state: { netApy: 0.2 },
+                  },
+                  state: { shares: "1", assets: "1", assetsUsd: 0.000001 },
+                },
+              ],
               vaultV2Positions: [
                 {
                   vault: {
@@ -513,6 +708,9 @@ test("morpho positions returns user overview from explicit address", async () =>
                       decimals: 6,
                       name: "PayPal USD",
                     },
+                    netApy: 0.05,
+                    avgNetApy7d: 0.048,
+                    avgNetApy30d: 0.046,
                   },
                   shares: "5",
                   assets: "5000000",
@@ -531,8 +729,19 @@ test("morpho positions returns user overview from explicit address", async () =>
     });
     assert.equal(result.protocol, "morpho");
     assert.equal(result.marketPositionCount, 1);
-    assert.equal(result.vaultPositionCount, 1);
+    assert.equal(result.vaultPositionCount, 2);
+    assert.equal(result.hiddenDustVaultPositionCount, 1);
     assert.equal(result.address, DEFAULT_ADDRESS);
+    const [v1, v2] = result.vaultPositions;
+    assert.equal(v1.version, "v1");
+    assert.equal(v1.assetsUsd, 250);
+    assert.equal(v1.shares, "9");
+    assert.equal(v1.vault.netApy, 0.035);
+    assert.equal(v1.vault.avgNetApy7d, 0.0349);
+    assert.equal(v2.version, "v2");
+    assert.equal(v2.assets, "5000000");
+    assert.equal(v2.vault.netApy, 0.05);
+    assert.equal(v2.vault.avgNetApy7d, 0.048);
   });
 });
 
@@ -788,4 +997,83 @@ test("morpho send rejects a changed quote fingerprint", async () => {
   } finally {
     harness.restore();
   }
+});
+
+// Vault lookups are cached per process, so each case uses its own vault address.
+async function captureMorphoVaultEntityVersion(vaultAddress, vaultLookupResponse) {
+  const service = createService();
+  const harness = createMorphoHarness();
+  const entityCalls = [];
+  const originalGetMorphoClient = MorphoProtocolEvm.prototype._getMorphoClient;
+  const originalGetChainId = MorphoProtocolEvm.prototype._getChainId;
+  const harnessFetch = globalThis.fetch;
+  MorphoProtocolEvm.prototype._getChainId = async function getChainId() {
+    return 8453;
+  };
+  MorphoProtocolEvm.prototype._getMorphoClient = async function getMorphoClient() {
+    const entity = (version) => ({
+      async getData() {
+        entityCalls.push(version);
+        throw new Error("stop after entity selection");
+      },
+    });
+    return {
+      vaultV1: () => entity("v1"),
+      vaultV2: () => entity("v2"),
+    };
+  };
+  globalThis.fetch = async (url, request) => {
+    if (String(url).startsWith("https://morpho-api.test")) {
+      if (vaultLookupResponse instanceof Error) {
+        throw vaultLookupResponse;
+      }
+      return { ok: true, status: 200, async json() { return vaultLookupResponse; } };
+    }
+    return harnessFetch(url, request);
+  };
+  try {
+    await service
+      .quoteMorphoVaultOperation({
+        network: "base",
+        address: DEFAULT_ADDRESS,
+        operation: "withdraw",
+        vaultAddress,
+        tokenAddress: DEFAULT_TOKEN,
+        amount: "1000000",
+      })
+      // The fake entity aborts right after it is chosen; only the selection matters here.
+      .catch(() => {});
+  } finally {
+    MorphoProtocolEvm.prototype._getMorphoClient = originalGetMorphoClient;
+    MorphoProtocolEvm.prototype._getChainId = originalGetChainId;
+    harness.restore();
+  }
+  return entityCalls;
+}
+
+test("morpho vault operations build a V1 entity for a V1 (MetaMorpho) vault", async () => {
+  const vaultAddress = "0x00000000000000000000000000000000000000c1";
+  const calls = await captureMorphoVaultEntityVersion(vaultAddress, {
+    data: { v1: { items: [{ address: vaultAddress, state: {} }] }, v2: { items: [] } },
+  });
+  assert.ok(calls.length > 0);
+  assert.ok(calls.every((version) => version === "v1"));
+});
+
+test("morpho vault operations keep the V2 entity for a V2 vault", async () => {
+  const vaultAddress = "0x00000000000000000000000000000000000000c2";
+  const calls = await captureMorphoVaultEntityVersion(vaultAddress, {
+    data: { v1: { items: [] }, v2: { items: [{ address: vaultAddress, adapters: { items: [] } }] } },
+  });
+  assert.ok(calls.length > 0);
+  assert.ok(calls.every((version) => version === "v2"));
+});
+
+test("morpho vault operations fall back to the V2 entity when the Morpho API is down", async () => {
+  const calls = await captureMorphoVaultEntityVersion(
+    "0x00000000000000000000000000000000000000c3",
+    new Error("ECONNREFUSED")
+  );
+  assert.ok(calls.length > 0);
+  assert.ok(calls.every((version) => version === "v2"));
 });

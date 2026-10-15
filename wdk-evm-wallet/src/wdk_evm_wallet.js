@@ -208,6 +208,28 @@ const LIFI_CHAIN_ALIASES = {
 // Default is deliberately small: list responses land in an LLM agent's
 // context window (a 100-item vault list is ~80 KB of JSON). Agents can raise
 // the limit explicitly when they really need more.
+// @morpho-org/wdk-protocol-lending-morpho-evm always builds a Vault V2 entity for the earn
+// vault. V1 (MetaMorpho) vaults use the SDK's vaultV1 entity, which exposes the same
+// getData / deposit / withdraw surface, so only the entity selection is overridden.
+class AgentLayerMorphoProtocolEvm extends MorphoProtocolEvm {
+  constructor(account, options, { vaultVersion = "v2" } = {}) {
+    super(account, options);
+    this._agentLayerVaultVersion = vaultVersion;
+  }
+
+  async _getVault() {
+    if (this._agentLayerVaultVersion !== "v1") {
+      return super._getVault();
+    }
+    const target = this._resolveVaultTarget();
+    const { address } = target;
+    const chainId = await this._getChainId();
+    this._assertTargetChain(target, { chainId, label: "Morpho target" });
+    const client = await this._getMorphoClient();
+    return { address, entity: client.vaultV1(address, chainId) };
+  }
+}
+
 const MORPHO_DEFAULT_LIST_LIMIT = 20;
 const MORPHO_MAX_LIST_LIMIT = 500;
 // Discovery lists/details only — never user positions. APY/TVL drift over
@@ -249,107 +271,56 @@ function morphoDiscoveryCacheSet(key, payload) {
     payload: JSON.stringify(payload),
   });
 }
-const MORPHO_VAULT_LIST_QUERY = `
-  query MorphoVaultV2List($first: Int!, $where: VaultV2sFilters, $orderBy: VaultV2OrderBy, $orderDirection: OrderDirection) {
-    vaultV2s(first: $first, where: $where, orderBy: $orderBy, orderDirection: $orderDirection) {
-      items {
-        address
-        symbol
-        name
-        listed
-        totalAssets
-        totalAssetsUsd
-        totalSupply
-        liquidity
-        liquidityUsd
-        idleAssets
-        idleAssetsUsd
-        sharePrice
-        netApy
-        avgNetApy
-        avgNetApyExcludingRewards
-        performanceFee
-        managementFee
-        maxRate
-        warnings {
-          type
-          level
-        }
-        asset {
-          id
-          address
-          decimals
-          symbol
-          name
-          priceUsd
-          yield {
-            apr
-            lookback
-          }
-        }
-        chain {
-          id
-          network
-        }
-        rewards {
-          supplyApr
-          asset {
-            address
-            symbol
-            chain {
-              id
-            }
-          }
-        }
-      }
-    }
+// Morpho asset prices moved from the deprecated `priceUsd` field to `price { usd }`
+// (removal 2026-10-21); responses flatten it back to `priceUsd` via normalizeMorphoAsset.
+const MORPHO_ASSET_FIELDS = `
+  address
+  decimals
+  symbol
+  name
+  price {
+    usd
   }
 `;
-const MORPHO_VAULT_BY_ADDRESS_QUERY = `
-  query MorphoVaultV2ByAddress($address: String!, $chainId: Int!) {
-    vaultV2ByAddress(address: $address, chainId: $chainId) {
-      address
-      symbol
-      name
-      listed
+// avgNetApy is a realized, share-price-derived average net of vault fees. Without an
+// explicit lookback the API averages the last 6 hours, so the windows are always named.
+const MORPHO_VAULT_APY_FIELDS = `
+  netApy
+  netApyExcludingRewards
+  avgNetApy7d: avgNetApy(lookback: SEVEN_DAYS)
+  avgNetApy7dExcludingRewards: avgNetApyExcludingRewards(lookback: SEVEN_DAYS)
+  avgNetApy30d: avgNetApy(lookback: THIRTY_DAYS)
+`;
+const MORPHO_VAULT_V1_FIELDS = `
+  fragment MorphoVaultV1Fields on Vault {
+    address
+    symbol
+    name
+    listed
+    creationTimestamp
+    asset {
+      ${MORPHO_ASSET_FIELDS}
+    }
+    chain {
+      id
+      network
+    }
+    liquidity {
+      underlying
+      usd
+    }
+    warnings {
+      type
+      level
+    }
+    state {
       totalAssets
       totalAssetsUsd
       totalSupply
-      liquidity
-      liquidityUsd
-      idleAssets
-      idleAssetsUsd
-      sharePrice
-      avgNetApy
-      avgNetApyExcludingRewards
-      performanceFee
-      managementFee
-      maxRate
-      metadata {
-        description
-        image
-      }
-      warnings {
-        type
-        level
-      }
-      asset {
-        id
-        address
-        decimals
-        symbol
-        name
-        priceUsd
-        yield {
-          apr
-          lookback
-        }
-      }
-      chain {
-        id
-        network
-      }
-      rewards {
+      fee
+      apy
+      ${MORPHO_VAULT_APY_FIELDS}
+      allRewards {
         supplyApr
         asset {
           address
@@ -359,52 +330,179 @@ const MORPHO_VAULT_BY_ADDRESS_QUERY = `
           }
         }
       }
-      adapters(first: 20) {
-        items {
-          __typename
-          address
-          type
-          assets
-          assetsUsd
-          ... on MorphoMarketV1Adapter {
-            positions(first: 50) {
-              items {
-                market {
-                  marketId
-                  collateralAsset {
-                    symbol
-                    address
-                  }
-                  loanAsset {
-                    symbol
-                    address
-                  }
-                }
-                state {
-                  supplyAssets
-                  supplyAssetsUsd
-                }
+      curators {
+        name
+      }
+    }
+  }
+`;
+const MORPHO_VAULT_V2_FIELDS = `
+  fragment MorphoVaultV2Fields on VaultV2 {
+    address
+    symbol
+    name
+    listed
+    creationTimestamp
+    totalAssets
+    totalAssetsUsd
+    totalSupply
+    liquidity
+    liquidityUsd
+    idleAssets
+    idleAssetsUsd
+    sharePrice
+    maxRate
+    performanceFee
+    managementFee
+    apy
+    ${MORPHO_VAULT_APY_FIELDS}
+    warnings {
+      type
+      level
+    }
+    asset {
+      ${MORPHO_ASSET_FIELDS}
+      yield {
+        apr
+        lookback
+      }
+    }
+    chain {
+      id
+      network
+    }
+    rewards {
+      supplyApr
+      asset {
+        address
+        symbol
+        chain {
+          id
+        }
+      }
+    }
+    adapters(first: 20) {
+      items {
+        __typename
+        address
+        type
+        assets
+        assetsUsd
+        ... on MetaMorphoAdapter {
+          metaMorpho {
+            address
+            name
+            symbol
+          }
+        }
+        ... on MorphoVaultV2Adapter {
+          innerVault {
+            address
+            name
+            symbol
+          }
+        }
+      }
+    }
+  }
+`;
+// V1 and V2 vaults live behind separate root fields with differently typed filters
+// (VaultFilters takes String addresses, VaultV2sFilters takes Address), so one request
+// carries both lists and the results are merged client-side.
+const MORPHO_VAULT_LIST_QUERY = `
+  query MorphoVaultList(
+    $first: Int!
+    $v1Where: VaultFilters
+    $v2Where: VaultV2sFilters
+    $v1OrderBy: VaultOrderBy
+    $v2OrderBy: VaultV2OrderBy
+    $orderDirection: OrderDirection
+  ) {
+    v1: vaults(first: $first, where: $v1Where, orderBy: $v1OrderBy, orderDirection: $orderDirection) {
+      items {
+        ...MorphoVaultV1Fields
+      }
+    }
+    v2: vaultV2s(first: $first, where: $v2Where, orderBy: $v2OrderBy, orderDirection: $orderDirection) {
+      items {
+        ...MorphoVaultV2Fields
+      }
+    }
+  }
+  ${MORPHO_VAULT_V1_FIELDS}
+  ${MORPHO_VAULT_V2_FIELDS}
+`;
+// vaultByAddress / vaultV2ByAddress answer NOT_FOUND for the other generation, and a
+// NOT_FOUND nulls the whole response, so the lookup filters both lists by address instead.
+// (Unlike assetAddress_in, VaultV2sFilters.address_in is typed String like the V1 filter.)
+const MORPHO_VAULT_BY_ADDRESS_QUERY = `
+  query MorphoVaultByAddress($address: String!, $chainId: Int!) {
+    v1: vaults(first: 1, where: { chainId_in: [$chainId], address_in: [$address] }) {
+      items {
+        ...MorphoVaultV1Fields
+        metadata {
+          description
+          image
+        }
+        state {
+          allocation {
+            supplyAssets
+            supplyAssetsUsd
+            supplyCap
+            market {
+              marketId
+              collateralAsset {
+                symbol
+                address
+              }
+              loanAsset {
+                symbol
+                address
               }
             }
           }
-          ... on MetaMorphoAdapter {
-            metaMorpho {
-              address
-              name
-              symbol
-            }
-          }
-          ... on MorphoVaultV2Adapter {
-            innerVault {
-              address
-              name
-              symbol
+        }
+      }
+    }
+    v2: vaultV2s(first: 1, where: { chainId_in: [$chainId], address_in: [$address] }) {
+      items {
+        ...MorphoVaultV2Fields
+        metadata {
+          description
+          image
+        }
+        adapters(first: 20) {
+          items {
+            __typename
+            address
+            ... on MorphoMarketV1Adapter {
+              positions(first: 50) {
+                items {
+                  market {
+                    marketId
+                    collateralAsset {
+                      symbol
+                      address
+                    }
+                    loanAsset {
+                      symbol
+                      address
+                    }
+                  }
+                  state {
+                    supplyAssets
+                    supplyAssetsUsd
+                  }
+                }
+              }
             }
           }
         }
       }
     }
   }
+  ${MORPHO_VAULT_V1_FIELDS}
+  ${MORPHO_VAULT_V2_FIELDS}
 `;
 const MORPHO_MARKET_LIST_QUERY = `
   query MorphoMarketList($first: Int!, $where: MarketFilters, $orderBy: MarketOrderBy, $orderDirection: OrderDirection) {
@@ -426,14 +524,18 @@ const MORPHO_MARKET_LIST_QUERY = `
           symbol
           decimals
           name
-          priceUsd
+          price {
+            usd
+          }
         }
         collateralAsset {
           address
           symbol
           decimals
           name
-          priceUsd
+          price {
+            usd
+          }
         }
         state {
           collateralAssets
@@ -487,14 +589,18 @@ const MORPHO_MARKET_BY_ID_QUERY = `
         symbol
         decimals
         name
-        priceUsd
+        price {
+          usd
+        }
       }
       collateralAsset {
         address
         symbol
         decimals
         name
-        priceUsd
+        price {
+          usd
+        }
       }
       state {
         collateralAssets
@@ -569,6 +675,27 @@ const MORPHO_USER_OVERVIEW_QUERY = `
           collateralUsd
         }
       }
+      vaultPositions {
+        vault {
+          address
+          name
+          symbol
+          asset {
+            address
+            symbol
+            decimals
+            name
+          }
+          state {
+            ${MORPHO_VAULT_APY_FIELDS}
+          }
+        }
+        state {
+          shares
+          assets
+          assetsUsd
+        }
+      }
       vaultV2Positions {
         vault {
           address
@@ -580,6 +707,7 @@ const MORPHO_USER_OVERVIEW_QUERY = `
             decimals
             name
           }
+          ${MORPHO_VAULT_APY_FIELDS}
         }
         shares
         assets
@@ -922,6 +1050,193 @@ function normalizeMorphoOrderDirection(value, fallback = "Desc") {
     return "Desc";
   }
   throw new Error("orderDirection must be 'asc' or 'desc'.");
+}
+
+// VaultOrderBy (V1) lacks the liquidity / real / idle asset fields. For those the V1 page
+// is fetched by TVL and the merged list is still sorted by the requested field below.
+const MORPHO_VAULT_V1_ORDER_FIELDS = new Set([
+  "Address",
+  "TotalAssets",
+  "TotalAssetsUsd",
+  "TotalSupply",
+  "Apy",
+  "NetApy",
+]);
+
+const MORPHO_VAULT_SORT_KEYS = {
+  Address: "address",
+  TotalAssets: "totalAssets",
+  TotalAssetsUsd: "totalAssetsUsd",
+  TotalSupply: "totalSupply",
+  Liquidity: "liquidity",
+  LiquidityUsd: "liquidityUsd",
+  Apy: "apy",
+  NetApy: "netApy",
+  RealAssets: "realAssets",
+  RealAssetsUsd: "realAssetsUsd",
+  IdleAssets: "idleAssets",
+  IdleAssetsUsd: "idleAssetsUsd",
+};
+
+// Morpho seeds new vaults with dead-share deposits, so almost every address "holds"
+// 1-wei positions in dozens of vaults. Positions below this USD value are hidden.
+const MORPHO_DUST_POSITION_USD = 1;
+
+function normalizeMorphoAsset(asset) {
+  if (!asset || typeof asset !== "object") {
+    return asset ?? null;
+  }
+  const { price, ...rest } = asset;
+  if (price === undefined) {
+    return rest;
+  }
+  const usd = Number(price?.usd);
+  return { ...rest, priceUsd: Number.isFinite(usd) ? usd : null };
+}
+
+function normalizeMorphoMarket(market) {
+  if (!market || typeof market !== "object") {
+    return market ?? null;
+  }
+  return {
+    ...market,
+    loanAsset: normalizeMorphoAsset(market.loanAsset),
+    collateralAsset: normalizeMorphoAsset(market.collateralAsset),
+  };
+}
+
+function pickMorphoApyFields(source) {
+  return {
+    netApy: source?.netApy ?? null,
+    netApyExcludingRewards: source?.netApyExcludingRewards ?? null,
+    avgNetApy7d: source?.avgNetApy7d ?? null,
+    avgNetApy7dExcludingRewards: source?.avgNetApy7dExcludingRewards ?? null,
+    avgNetApy30d: source?.avgNetApy30d ?? null,
+  };
+}
+
+function listMorphoVaultV2UnderlyingVaults(adapters) {
+  const items = Array.isArray(adapters?.items) ? adapters.items : [];
+  const underlying = [];
+  for (const adapter of items) {
+    if (adapter?.metaMorpho?.address) {
+      underlying.push({ ...adapter.metaMorpho, version: "v1" });
+    } else if (adapter?.innerVault?.address) {
+      underlying.push({ ...adapter.innerVault, version: "v2" });
+    }
+  }
+  return underlying;
+}
+
+// V1 (MetaMorpho) and V2 vaults are reported in one shape so callers can compare them
+// directly. `version` tells which generation (and which write path) a vault belongs to.
+function normalizeMorphoVaultV1(vault) {
+  const state = vault?.state || {};
+  const normalized = {
+    version: "v1",
+    address: vault?.address ?? null,
+    symbol: vault?.symbol ?? null,
+    name: vault?.name ?? null,
+    listed: vault?.listed ?? null,
+    creationTimestamp: vault?.creationTimestamp ?? null,
+    asset: normalizeMorphoAsset(vault?.asset),
+    chain: vault?.chain ?? null,
+    totalAssets: state.totalAssets ?? null,
+    totalAssetsUsd: state.totalAssetsUsd ?? null,
+    totalSupply: state.totalSupply ?? null,
+    liquidity: vault?.liquidity?.underlying ?? null,
+    liquidityUsd: vault?.liquidity?.usd ?? null,
+    apy: state.apy ?? null,
+    ...pickMorphoApyFields(state),
+    performanceFee: state.fee ?? null,
+    managementFee: null,
+    rewards: Array.isArray(state.allRewards) ? state.allRewards : [],
+    curators: Array.isArray(state.curators) ? state.curators.map((curator) => curator?.name).filter(Boolean) : [],
+    warnings: Array.isArray(vault?.warnings) ? vault.warnings : [],
+    underlyingVaults: [],
+  };
+  if (vault?.metadata !== undefined) {
+    normalized.metadata = vault.metadata;
+  }
+  if (Array.isArray(state.allocation)) {
+    normalized.allocation = state.allocation.map((entry) => ({
+      ...entry,
+      market: normalizeMorphoMarket(entry?.market),
+    }));
+  }
+  return normalized;
+}
+
+function normalizeMorphoVaultV2(vault, { includeAdapters = false } = {}) {
+  const { adapters, asset, ...rest } = vault || {};
+  const normalized = {
+    version: "v2",
+    ...rest,
+    asset: normalizeMorphoAsset(asset),
+    ...pickMorphoApyFields(vault),
+    rewards: Array.isArray(vault?.rewards) ? vault.rewards : [],
+    warnings: Array.isArray(vault?.warnings) ? vault.warnings : [],
+    underlyingVaults: listMorphoVaultV2UnderlyingVaults(adapters),
+  };
+  if (includeAdapters) {
+    normalized.adapters = adapters ?? null;
+  }
+  return normalized;
+}
+
+function compareMorphoSortValues(left, right) {
+  const isIntString = (value) => typeof value === "string" && /^-?\d+$/.test(value);
+  if (isIntString(left) && isIntString(right)) {
+    const a = BigInt(left);
+    const b = BigInt(right);
+    return a === b ? 0 : a < b ? -1 : 1;
+  }
+  const a = Number(left);
+  const b = Number(right);
+  if (Number.isFinite(a) && Number.isFinite(b)) {
+    return a - b;
+  }
+  return String(left).localeCompare(String(right));
+}
+
+function sortMorphoVaults(vaults, orderBy, orderDirection) {
+  const key = MORPHO_VAULT_SORT_KEYS[orderBy] || "totalAssetsUsd";
+  const direction = orderDirection === "Asc" ? 1 : -1;
+  return [...vaults].sort((left, right) => {
+    const a = left?.[key];
+    const b = right?.[key];
+    const aMissing = a === null || a === undefined;
+    const bMissing = b === null || b === undefined;
+    // Vaults without the sort field (V1 has no idle/real assets) always go last.
+    if (aMissing || bMissing) {
+      return aMissing === bMissing ? 0 : aMissing ? 1 : -1;
+    }
+    return compareMorphoSortValues(a, b) * direction;
+  });
+}
+
+function normalizeMorphoVaultPosition(position, version) {
+  const vault = position?.vault || {};
+  const apySource = version === "v1" ? vault.state : vault;
+  const holding = version === "v1" ? position?.state || {} : position || {};
+  return {
+    version,
+    vault: {
+      address: vault.address ?? null,
+      name: vault.name ?? null,
+      symbol: vault.symbol ?? null,
+      asset: vault.asset ?? null,
+      ...pickMorphoApyFields(apySource),
+    },
+    shares: holding.shares ?? null,
+    assets: holding.assets ?? null,
+    assetsUsd: holding.assetsUsd ?? null,
+  };
+}
+
+function isMorphoDustPosition(position) {
+  const usd = Number(position?.assetsUsd);
+  return Number.isFinite(usd) && usd < MORPHO_DUST_POSITION_USD;
 }
 
 function normalizeMorphoSearch(value) {
@@ -2401,14 +2716,21 @@ export class WdkEvmWalletService {
           address,
           chainId: runtimeConfig.chainId,
         },
-        operationName: "MorphoVaultV2ByAddress",
+        operationName: "MorphoVaultByAddress",
       });
+      const v2Raw = data?.v2?.items?.[0] || null;
+      const v1Raw = data?.v1?.items?.[0] || null;
+      const vault = v2Raw
+        ? normalizeMorphoVaultV2(v2Raw, { includeAdapters: true })
+        : v1Raw
+          ? normalizeMorphoVaultV1(v1Raw)
+          : null;
       const result = {
         network: runtimeConfig.network,
         chainId: runtimeConfig.chainId,
         protocol: "morpho",
-        vault: data.vaultV2ByAddress || null,
-        found: Boolean(data.vaultV2ByAddress),
+        vault,
+        found: Boolean(vault),
         source: "morpho-api",
       };
       morphoDiscoveryCacheSet(cacheKey, result);
@@ -2443,8 +2765,10 @@ export class WdkEvmWalletService {
     }
     const variables = {
       first,
-      where,
-      orderBy: resolvedOrderBy,
+      v1Where: where,
+      v2Where: where,
+      v1OrderBy: MORPHO_VAULT_V1_ORDER_FIELDS.has(resolvedOrderBy) ? resolvedOrderBy : "TotalAssetsUsd",
+      v2OrderBy: resolvedOrderBy,
       orderDirection: resolvedOrderDirection,
     };
     const cacheKey = JSON.stringify(["vaults", variables]);
@@ -2455,9 +2779,19 @@ export class WdkEvmWalletService {
     const data = await this.#morphoGraphqlRequest({
       query: MORPHO_VAULT_LIST_QUERY,
       variables,
-      operationName: "MorphoVaultV2List",
+      operationName: "MorphoVaultList",
     });
-    const vaults = Array.isArray(data?.vaultV2s?.items) ? data.vaultV2s.items : [];
+    const v1Vaults = (Array.isArray(data?.v1?.items) ? data.v1.items : []).map((vault) =>
+      normalizeMorphoVaultV1(vault)
+    );
+    const v2Vaults = (Array.isArray(data?.v2?.items) ? data.v2.items : []).map((vault) =>
+      normalizeMorphoVaultV2(vault)
+    );
+    const vaults = sortMorphoVaults(
+      [...v1Vaults, ...v2Vaults],
+      resolvedOrderBy,
+      resolvedOrderDirection
+    ).slice(0, first);
     const result = {
       network: runtimeConfig.network,
       chainId: runtimeConfig.chainId,
@@ -2511,7 +2845,7 @@ export class WdkEvmWalletService {
         network: runtimeConfig.network,
         chainId: runtimeConfig.chainId,
         protocol: "morpho",
-        market: data.marketById || null,
+        market: data.marketById ? normalizeMorphoMarket(data.marketById) : null,
         found: Boolean(data.marketById),
         source: "morpho-api",
       };
@@ -2575,7 +2909,9 @@ export class WdkEvmWalletService {
       variables,
       operationName: "MorphoMarketList",
     });
-    const markets = Array.isArray(data?.markets?.items) ? data.markets.items : [];
+    const markets = (Array.isArray(data?.markets?.items) ? data.markets.items : []).map((market) =>
+      normalizeMorphoMarket(market)
+    );
     const result = {
       network: runtimeConfig.network,
       chainId: runtimeConfig.chainId,
@@ -2613,7 +2949,15 @@ export class WdkEvmWalletService {
         });
         const user = data.userByAddress || null;
         const marketPositions = Array.isArray(user?.marketPositions) ? user.marketPositions : [];
-        const vaultPositions = Array.isArray(user?.vaultV2Positions) ? user.vaultV2Positions : [];
+        const allVaultPositions = [
+          ...(Array.isArray(user?.vaultPositions) ? user.vaultPositions : []).map((position) =>
+            normalizeMorphoVaultPosition(position, "v1")
+          ),
+          ...(Array.isArray(user?.vaultV2Positions) ? user.vaultV2Positions : []).map((position) =>
+            normalizeMorphoVaultPosition(position, "v2")
+          ),
+        ];
+        const vaultPositions = allVaultPositions.filter((position) => !isMorphoDustPosition(position));
         return {
           network: runtimeConfig.network,
           chainId: runtimeConfig.chainId,
@@ -2622,6 +2966,8 @@ export class WdkEvmWalletService {
           protocol: "morpho",
           marketPositionCount: marketPositions.length,
           vaultPositionCount: vaultPositions.length,
+          hiddenDustVaultPositionCount: allVaultPositions.length - vaultPositions.length,
+          dustThresholdUsd: MORPHO_DUST_POSITION_USD,
           marketPositions,
           vaultPositions,
           source: "morpho-api",
@@ -2759,7 +3105,7 @@ export class WdkEvmWalletService {
           );
         }
 
-        const protocol = this.#createMorphoProtocol(account, runtimeConfig, request);
+        const protocol = await this.#createMorphoProtocol(account, runtimeConfig, request);
         let result;
         try {
           result = await this.#sendMorphoProtocolOperation({
@@ -2946,7 +3292,7 @@ export class WdkEvmWalletService {
           );
         }
 
-        const protocol = this.#createMorphoProtocol(account, runtimeConfig, request);
+        const protocol = await this.#createMorphoProtocol(account, runtimeConfig, request);
         let result;
         try {
           result = await this.#sendMorphoProtocolOperation({
@@ -5012,8 +5358,29 @@ export class WdkEvmWalletService {
     return payload?.data || {};
   }
 
-  #createMorphoProtocol(account, runtimeConfig, request) {
-    return new MorphoProtocolEvm(account, this.#buildMorphoProtocolOptions(runtimeConfig, request));
+  async #createMorphoProtocol(account, runtimeConfig, request) {
+    const vaultVersion = await this.#resolveMorphoVaultVersion(runtimeConfig, request);
+    return new AgentLayerMorphoProtocolEvm(
+      account,
+      this.#buildMorphoProtocolOptions(runtimeConfig, request),
+      { vaultVersion }
+    );
+  }
+
+  // Presets are V2-only, so only an explicit vault address can point at a V1 vault. The
+  // lookup reuses the cached discovery call. If the Morpho API is unreachable the V2 path
+  // is kept, so V2 writes never start depending on API availability.
+  async #resolveMorphoVaultVersion(runtimeConfig, request) {
+    const vaultAddress = request?.target?.vaultAddress;
+    if (!vaultAddress) {
+      return "v2";
+    }
+    try {
+      const lookup = await this.getMorphoVaults({ network: runtimeConfig.network, vaultAddress });
+      return lookup?.vault?.version === "v1" ? "v1" : "v2";
+    } catch {
+      return "v2";
+    }
   }
 
   #buildMorphoProtocolOptions(runtimeConfig, request) {
@@ -5290,7 +5657,7 @@ export class WdkEvmWalletService {
     request,
     tolerateOperationFeeFailure = false,
   }) {
-    const protocol = this.#createMorphoProtocol(account, runtimeConfig, request);
+    const protocol = await this.#createMorphoProtocol(account, runtimeConfig, request);
     try {
       const methods = this.#getMorphoOperationMethods(request);
       const operationOptions = this.#buildMorphoOperationOptions(request);

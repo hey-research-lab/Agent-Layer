@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Morpho vault tools keep working after Morpho removes `Asset.priceUsd`
+  (2026-10-21).** Every Morpho query now reads `price { usd }`; responses still
+  expose `priceUsd`, so callers see no change.
+- **Morpho vault yields now show named windows.** `get_evm_morpho_vaults` and
+  `get_evm_morpho_positions` report the current `netApy` plus realized 7-day
+  and 30-day averages (`avgNetApy7d`, `avgNetApy30d`,
+  `avgNetApy7dExcludingRewards`). The previous `avgNetApy` was Morpho's
+  default 6-hour average and has been removed.
+- **Morpho V1 (MetaMorpho) vaults are supported alongside V2.** Vault lists
+  merge both generations with a `version` field, lookups by address find
+  either, positions include V1 holdings, and `manage_evm_morpho_vault_position`
+  supplies to and withdraws from V1 vaults.
+- Morpho vault positions under $1 (dead-share seed deposits) are hidden and
+  counted in `hiddenDustVaultPositionCount`.
+
 ## v0.1.119 - 2026-10-14
 
 - **`/wallet:wallet-sol` in Claude Code now switches the active wallet backend

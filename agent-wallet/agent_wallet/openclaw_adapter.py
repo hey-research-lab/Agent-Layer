@@ -2317,7 +2317,7 @@ class OpenClawWalletAdapter:
                     15,
                     AgentToolSpec(
                         name="get_evm_morpho_vaults",
-                        description="Get read-only Morpho vault discovery and detail data for the configured EVM network on supported mainnet chains. When listing, results are ordered (default: largest TVL first) and can be filtered by underlying asset.",
+                        description="Get read-only Morpho vault discovery and detail data for the configured EVM network on supported mainnet chains. Covers both V1 (MetaMorpho) and V2 vaults in one list; each vault carries `version` (v1/v2). When listing, results are ordered (default: largest TVL first) and can be filtered by underlying asset. Rates are fractions: `netApy` is the current net rate, `avgNetApy7d` / `avgNetApy30d` are realized averages net of vault fees (with rewards), and `avgNetApy7dExcludingRewards` strips rewards.",
                         input_schema={
                             "type": "object",
                             "properties": {
@@ -2460,7 +2460,7 @@ class OpenClawWalletAdapter:
                     17,
                     AgentToolSpec(
                         name="get_evm_morpho_positions",
-                        description="Get read-only Morpho vault and market positions for the configured EVM wallet on supported mainnet chains.",
+                        description="Get read-only Morpho vault and market positions for the configured EVM wallet on supported mainnet chains. Vault positions cover V1 (MetaMorpho) and V2 vaults (`version`), each with the vault's current `netApy` and 7-day / 30-day realized averages (`avgNetApy7d`, `avgNetApy30d`). Dust positions under $1 (dead-share seed deposits) are hidden and counted in `hidden_dust_vault_position_count`.",
                         input_schema={
                             "type": "object",
                             "properties": {
