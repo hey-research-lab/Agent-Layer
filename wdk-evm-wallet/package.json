@@ -1,6 +1,6 @@
 {
   "name": "wdk-evm-wallet",
-  "version": "0.1.120",
+  "version": "0.1.121",
   "private": true,
   "type": "module",
   "description": "Separate EVM wallet service built on Tether WDK.",

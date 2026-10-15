@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.121 - 2026-10-15
+
 - **Install and update work with a Python installed by uv.** The installer
   copied the interpreter into the wallet's venv; a copied uv (python-build-
   standalone) interpreter cannot find its standard library and died with
