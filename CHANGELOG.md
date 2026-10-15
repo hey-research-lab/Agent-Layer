@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.120 - 2026-10-15
+
 - **New `get_morpho_rebalance_report` tool: a read-only scan for better Morpho
   vaults.** For each Morpho vault position (V1 and V2) on Base and Ethereum it
   lists vaults holding the same asset on the same chain that are listed, carry
