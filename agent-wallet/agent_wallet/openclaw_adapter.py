@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import time
@@ -4795,7 +4796,79 @@ class OpenClawWalletAdapter:
                     }
                 }
             )
-        return result
+        return await self._maybe_attach_morpho_auto_scan(tool_name, result)
+
+    # Tools that never trigger the automatic Morpho scan: the monitor's own tools, and
+    # host/session plumbing that is not a wallet read.
+    MORPHO_AUTO_SCAN_EXCLUDED_TOOLS = frozenset(
+        {
+            "get_morpho_rebalance_report",
+            "get_morpho_monitor_schedule",
+            "issue_wallet_approval",
+            "get_autonomous_session",
+            "agentlayer_autonomous_status",
+        }
+    )
+
+    def _is_read_only_tool(self, tool_name: str) -> bool:
+        cache = getattr(self, "_read_only_tool_cache", None)
+        if cache is None or tool_name not in cache:
+            cache = {tool.name: bool(tool.read_only) for tool in self.list_tools()}
+            self._read_only_tool_cache = cache
+        return cache.get(tool_name, False)
+
+    async def _maybe_attach_morpho_auto_scan(self, tool_name: str, result: AgentToolResult) -> AgentToolResult:
+        """Run the Morpho rebalance scan in the background of an ordinary read, when due.
+
+        At most once per scan interval per wallet, only on successful read-only calls to
+        the EVM wallet, and never at the cost of the original answer: any failure or
+        timeout is swallowed and retried a few hours later. Only candidates that are new
+        since the previous scan are attached, so the user hears about each one once.
+        """
+        try:
+            if not result.ok or not isinstance(result.data, dict):
+                return result
+            if tool_name in self.MORPHO_AUTO_SCAN_EXCLUDED_TOOLS or tool_name.startswith(("imd_", "connector__")):
+                return result
+            backend = self.backend
+            if getattr(backend, "name", None) != "wdk_evm_local" or not self._is_read_only_tool(tool_name):
+                return result
+            address = await backend.get_address()
+            if not morpho_monitor.auto_scan_due(address):
+                return result
+        except Exception:
+            return result
+        try:
+            report = await asyncio.wait_for(
+                backend.get_morpho_rebalance_report(include_migration_cost=False),
+                timeout=morpho_monitor.AUTO_SCAN_TIMEOUT_SECONDS,
+            )
+            meta = morpho_monitor.record_report(
+                {"address": report.get("address") or address, "networkReports": report.get("network_reports")}
+            )
+        except Exception:
+            try:
+                morpho_monitor.record_auto_scan_failure(address)
+            except Exception:
+                pass
+            return result
+        if not meta.get("new_opportunity_count"):
+            return result
+        notice = {
+            "scanned_at": report.get("scanned_at"),
+            "position_count": report.get("position_count"),
+            "new_opportunity_count": meta.get("new_opportunity_count"),
+            "new_opportunities": morpho_monitor.summarize_new_opportunities(report.get("network_reports")),
+            "next_scan_due_at": meta.get("next_scan_due_at"),
+            "agent_instruction": (
+                "Automatic Morpho check (read-only, nothing was moved). After answering the user's request, "
+                "briefly tell them that better Morpho vaults were found for their positions, with the rates. "
+                "For full details and the migration gas estimate call get_morpho_rebalance_report; to move funds "
+                "use rebalance_evm_morpho_vault_position (intent_preview, then intent_execute only after explicit "
+                "confirmation). Do not move funds unprompted."
+            ),
+        }
+        return result.model_copy(update={"data": {**result.data, "morpho_monitor_notice": notice}})
 
     async def _invoke_tool_dispatch(
         self, tool_name: str, arguments: dict[str, Any] | None = None

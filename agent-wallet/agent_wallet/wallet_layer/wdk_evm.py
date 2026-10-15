@@ -1212,6 +1212,7 @@ class WdkEvmLocalWalletBackend(AgentWalletBackend):
         networks: list[str] | None = None,
         min_tvl_usd: float | int | None = None,
         candidate_limit: int | None = None,
+        include_migration_cost: bool = True,
     ) -> dict[str, Any]:
         resolved_address = await self.get_address()
         payload: dict[str, Any] = {
@@ -1219,6 +1220,8 @@ class WdkEvmLocalWalletBackend(AgentWalletBackend):
             "address": resolved_address,
             "accountIndex": self.account_index,
         }
+        if not include_migration_cost:
+            payload["includeMigrationCost"] = False
         if networks:
             payload["networks"] = [str(network).strip().lower() for network in networks]
         if min_tvl_usd is not None:

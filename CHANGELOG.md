@@ -22,6 +22,14 @@
   approval is bound to the owner, network, both vaults, token and amount, so it
   cannot be redirected to another vault. If the supply step fails the funds
   stay in the wallet and nothing is retried.
+- **The wallet checks Morpho positions on its own.** On an ordinary read-only
+  EVM wallet call, at most once every 3 days per wallet, it runs the rebalance
+  scan and, only when it finds better vaults that are new since the last check,
+  adds a short `morpho_monitor_notice` to that answer. It works on every host
+  with no setup, never delays a write, never breaks the original answer (a
+  failed or slow scan is dropped and retried a few hours later) and never moves
+  funds. Set `AGENT_WALLET_MORPHO_AUTO_SCAN=0` to turn it off. Base and
+  Ethereum are now scanned in parallel.
 - **Morpho monitor every 3 days on every host.** New read-only
   `get_morpho_monitor_schedule` returns the one prompt every scheduled run
   executes (scan only, never moves funds) and the recipe for the host: Hermes

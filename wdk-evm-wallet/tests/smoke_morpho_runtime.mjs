@@ -1166,3 +1166,66 @@ test("morpho rebalance report rejects networks outside Base and Ethereum", async
     /networks may only contain: base, ethereum/
   );
 });
+
+test("morpho rebalance report can skip the migration cost estimate", async () => {
+  const service = createService();
+  const usdc = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+  const rpcMethods = [];
+  const operations = [];
+  await withMockedFetch(async (url, options) => {
+    const body = JSON.parse(String(options?.body || "{}"));
+    if (String(url).startsWith("http://fake-rpc.local")) {
+      rpcMethods.push(body.method);
+      return { ok: true, status: 200, async json() { return { jsonrpc: "2.0", id: body.id, result: "0x1" }; } };
+    }
+    operations.push(body.operationName);
+    const data = {
+      MorphoUserByAddress: {
+        userByAddress: {
+          marketPositions: [],
+          vaultPositions: [
+            {
+              vault: {
+                address: "0x00000000000000000000000000000000000000f1",
+                asset: { address: usdc },
+                state: { avgNetApy7d: 0.03, avgNetApy30d: 0.03 },
+              },
+              state: { assets: "1000000", assetsUsd: 1 },
+            },
+          ],
+          vaultV2Positions: [],
+        },
+      },
+      MorphoVaultList: {
+        v1: { items: [] },
+        v2: {
+          items: [
+            {
+              address: "0x00000000000000000000000000000000000000f2",
+              listed: true,
+              totalAssetsUsd: 5_000_000,
+              avgNetApy7d: 0.05,
+              avgNetApy30d: 0.05,
+              asset: { address: usdc },
+              adapters: { items: [] },
+            },
+          ],
+        },
+      },
+      MorphoVaultByAddress: { v1: { items: [] }, v2: { items: [] } },
+    }[body.operationName];
+    return { ok: true, status: 200, async json() { return { data }; } };
+  }, async () => {
+    const report = await service.getMorphoRebalanceReport({
+      address: DEFAULT_ADDRESS,
+      networks: ["base"],
+      includeMigrationCost: false,
+    });
+    assert.equal(report.criteria.migrationCostEstimated, false);
+    const [entry] = report.networkReports[0].positions;
+    assert.equal(entry.candidates.length, 1);
+    assert.equal(entry.migrationCostEstimate, null);
+  });
+  assert.ok(!rpcMethods.includes("eth_gasPrice"));
+  assert.ok(!operations.includes("MorphoNativePrice"));
+});

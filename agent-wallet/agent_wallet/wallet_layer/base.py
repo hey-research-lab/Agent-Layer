@@ -136,6 +136,7 @@ class AgentWalletBackend(ABC):
         networks: list[str] | None = None,
         min_tvl_usd: float | int | None = None,
         candidate_limit: int | None = None,
+        include_migration_cost: bool = True,
     ) -> dict[str, Any]:
         raise WalletBackendError(f"{self.name} does not support the Morpho rebalance report.")
 

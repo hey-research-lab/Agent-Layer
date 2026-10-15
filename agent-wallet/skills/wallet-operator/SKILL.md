@@ -136,6 +136,7 @@ Use this skill before calling OpenClaw wallet tools. It is the routing guide for
 
 - `get_morpho_rebalance_report` scans the wallet's Morpho vault positions (V1 and V2) on Base and Ethereum for better vaults with the same asset on the same chain. It only reads; present its candidates and let the user decide. Migration gas in it is an estimate and never a reason to hide a candidate.
 - To scan every 3 days, call `get_morpho_monitor_schedule` with the current host and follow the returned recipe only after the user asks for monitoring. On Hermes and OpenClaw create the job with the agent's own cron tool using the returned arguments. A scheduled run never moves funds.
+- Any read-only wallet answer may carry `morpho_monitor_notice`: the wallet checked the Morpho positions on its own (at most every 3 days) and found better vaults that are new since the last check. Answer the user's request first, then mention the notice briefly with the rates; nothing was moved, and moving funds still needs the user's explicit confirmation.
 - To move a position, use `rebalance_evm_morpho_vault_position`: `intent_preview`, then `intent_execute` with identical arguments only after the user explicitly confirms the previewed move. If it reports `status: partial`, the funds are in the wallet; say so and do not retry on your own.
 
 ## Disabled Or Avoided Paths

@@ -213,3 +213,83 @@ def schedule_recipe(host: str) -> dict[str, Any]:
         ]
         recipe["delivery"] = "Each run's result appears in the Codex automations inbox."
     return recipe
+
+
+# Automatic scan: piggybacks on ordinary read-only wallet calls, at most once per
+# SCAN_INTERVAL_DAYS per wallet, so users with Morpho positions get the check without
+# setting anything up. Disable with AGENT_WALLET_MORPHO_AUTO_SCAN=0.
+AUTO_SCAN_ENV = "AGENT_WALLET_MORPHO_AUTO_SCAN"
+AUTO_SCAN_RETRY_HOURS = 6
+AUTO_SCAN_TIMEOUT_SECONDS = 25
+
+
+def auto_scan_enabled() -> bool:
+    import os
+
+    return os.getenv(AUTO_SCAN_ENV, "1").strip().lower() not in {"0", "false", "off", "no"}
+
+
+def auto_scan_due(address: str | None, *, path: Path | None = None, now: datetime | None = None) -> bool:
+    if not auto_scan_enabled() or not _wallet_key(address):
+        return False
+    current = now or _now()
+    status = scan_status(address, path=path, now=current)
+    if not status["scan_due"]:
+        return False
+    wallet = _load_state(path or state_path())["wallets"].get(_wallet_key(address)) or {}
+    failed = _parse_time(wallet.get("auto_scan_failed_at"))
+    return failed is None or current - failed >= timedelta(hours=AUTO_SCAN_RETRY_HOURS)
+
+
+def record_auto_scan_failure(address: str | None, *, path: Path | None = None, now: datetime | None = None) -> None:
+    key = _wallet_key(address)
+    if not key:
+        return
+    target = path or state_path()
+    state = _load_state(target)
+    wallet = dict(state["wallets"].get(key) or {})
+    wallet["auto_scan_failed_at"] = (now or _now()).isoformat().replace("+00:00", "Z")
+    state["wallets"][key] = wallet
+    state["version"] = STATE_VERSION
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, json.dumps(state, indent=2, sort_keys=True))
+
+
+def summarize_new_opportunities(network_reports: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Compact rows for candidates marked isNew by record_report."""
+    rows: list[dict[str, Any]] = []
+    for network_report in network_reports or []:
+        for position in network_report.get("positions") or []:
+            current = position.get("current") or {}
+            current_vault = current.get("vault") or {}
+            for candidate in position.get("candidates") or []:
+                if not candidate.get("isNew"):
+                    continue
+                vault = candidate.get("vault") or {}
+                rows.append(
+                    {
+                        "network": position.get("network") or network_report.get("network"),
+                        "asset": (current.get("asset") or {}).get("symbol"),
+                        "position_usd": current.get("assetsUsd"),
+                        "from_vault": {
+                            "address": current_vault.get("address"),
+                            "name": current_vault.get("name"),
+                            "avg_net_apy_7d": current.get("avgNetApy7d"),
+                            "avg_net_apy_30d": current.get("avgNetApy30d"),
+                        },
+                        "to_vault": {
+                            "address": vault.get("address"),
+                            "name": vault.get("name"),
+                            "version": vault.get("version"),
+                            "avg_net_apy_7d": candidate.get("avgNetApy7d"),
+                            "avg_net_apy_30d": candidate.get("avgNetApy30d"),
+                        },
+                        "delta_7d": candidate.get("delta7d"),
+                        "estimated_yearly_gain_usd": candidate.get("estimatedYearlyGainUsd"),
+                        "reward_share_7d": candidate.get("rewardShare7d"),
+                        "position_share_of_tvl": candidate.get("positionShareOfTvl"),
+                        "young": candidate.get("young"),
+                        "warnings": candidate.get("warnings") or [],
+                    }
+                )
+    return rows

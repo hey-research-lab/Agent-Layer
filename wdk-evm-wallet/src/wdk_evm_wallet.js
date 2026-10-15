@@ -3146,20 +3146,23 @@ export class WdkEvmWalletService {
     networks,
     minTvlUsd,
     candidateLimit,
+    includeMigrationCost = true,
   }) {
     const watched = normalizeMorphoRebalanceNetworks(networks);
+    const estimateCost = includeMigrationCost !== false;
     const minTvl =
       normalizeOptionalNonNegativeNumber(minTvlUsd, "minTvlUsd") ?? MORPHO_REBALANCE_DEFAULT_MIN_TVL_USD;
     const limit = normalizeMorphoCandidateLimit(candidateLimit);
     const nowSeconds = Math.floor(Date.now() / 1000);
-    const networkReports = [];
     let reportAddress = address || null;
-    for (const network of watched) {
-      try {
-        const positions = await this.getMorphoPositions({ seedPhrase, address, accountIndex, network });
-        reportAddress = positions.address || reportAddress;
-        networkReports.push(
-          await this.#buildMorphoNetworkRebalanceReport({
+    // Networks are independent, so they are scanned in parallel; a failure stays local
+    // to its network's entry.
+    const networkReports = await Promise.all(
+      watched.map(async (network) => {
+        try {
+          const positions = await this.getMorphoPositions({ seedPhrase, address, accountIndex, network });
+          reportAddress = positions.address || reportAddress;
+          return await this.#buildMorphoNetworkRebalanceReport({
             seedPhrase,
             address: positions.address,
             accountIndex,
@@ -3168,16 +3171,17 @@ export class WdkEvmWalletService {
             minTvl,
             limit,
             nowSeconds,
-          })
-        );
-      } catch (error) {
-        networkReports.push({
-          network,
-          error: error instanceof Error ? error.message : String(error),
-          positions: [],
-        });
-      }
-    }
+            estimateCost,
+          });
+        } catch (error) {
+          return {
+            network,
+            error: error instanceof Error ? error.message : String(error),
+            positions: [],
+          };
+        }
+      })
+    );
     const positions = networkReports.flatMap((report) => report.positions);
     return {
       protocol: "morpho",
@@ -3191,6 +3195,7 @@ export class WdkEvmWalletService {
         minTvlUsd: minTvl,
         mustBeat: ["avgNetApy7d", "avgNetApy30d"],
         migrationCostFiltersCandidates: false,
+        migrationCostEstimated: estimateCost,
       },
       positionCount: positions.length,
       opportunityCount: positions.filter((position) => position.candidates.length > 0).length,
@@ -3208,6 +3213,7 @@ export class WdkEvmWalletService {
     minTvl,
     limit,
     nowSeconds,
+    estimateCost = true,
   }) {
     const runtimeConfig = this.#resolveRuntimeConfig(network);
     const vaultPositions = Array.isArray(positions.vaultPositions) ? positions.vaultPositions : [];
@@ -3226,8 +3232,8 @@ export class WdkEvmWalletService {
       });
       vaultsByAsset.set(asset, listing.vaults);
     }
-    const gasPriceWei = await this.#readGasPriceWei(runtimeConfig);
-    const nativeUsd = await this.#getMorphoNativeUsdPrice(runtimeConfig);
+    const gasPriceWei = estimateCost ? await this.#readGasPriceWei(runtimeConfig) : null;
+    const nativeUsd = estimateCost ? await this.#getMorphoNativeUsdPrice(runtimeConfig) : null;
     const reports = [];
     for (const position of vaultPositions) {
       const lookup = await this.getMorphoVaults({ network, vaultAddress: position.vault.address }).catch(
@@ -3243,7 +3249,7 @@ export class WdkEvmWalletService {
         nowSeconds,
       });
       const migrationCost =
-        candidates.length > 0
+        candidates.length > 0 && estimateCost
           ? await this.#estimateMorphoMigrationCost({
               seedPhrase,
               address,

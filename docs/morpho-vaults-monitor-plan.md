@@ -59,3 +59,7 @@ Status: in progress (branch `morpho-vaults-v1-apy`), started 2026-10-15.
    Claude Code `/wallet:morpho-monitor` scheduled task, Codex `$morpho-monitor` automation).
 4. ✅ Rebalance intent (`rebalance_evm_morpho_vault_position`): withdraw → verify → deposit, one confirmation bound to stable params;
    gas re-quoted at preview time. A failed deposit leaves funds in the wallet and is reported.
+5. ✅ Automatic check (default for everyone with positions): read-only EVM wallet calls run the
+   scan when it is due (≤ once per 3 days per wallet, no migration-cost estimate, 25 s cap,
+   6 h retry after a failure) and attach `morpho_monitor_notice` only for new candidates.
+   Opt-out: `AGENT_WALLET_MORPHO_AUTO_SCAN=0`.
