@@ -18,6 +18,7 @@
       "get_evm_morpho_positions",
       "get_evm_morpho_vaults",
       "get_morpho_rebalance_report",
+      "rebalance_evm_morpho_vault_position",
       "get_evm_lido_overview",
       "get_evm_lido_positions",
       "get_evm_lido_withdrawal_requests",

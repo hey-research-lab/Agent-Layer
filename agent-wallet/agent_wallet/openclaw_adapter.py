@@ -438,6 +438,270 @@ class OpenClawWalletAdapter:
                 return f"{action}: {text[:160]}" + ("…" if len(text) > 160 else "")
         return action
 
+    MORPHO_REBALANCE_INTENT_SECONDS = 300
+    MORPHO_REBALANCE_ACTION_LABEL = "EVM Morpho vault rebalance"
+
+    async def _invoke_morpho_rebalance(
+        self,
+        tool_name: str,
+        args: dict[str, Any],
+        active_backend: AgentWalletBackend,
+    ) -> AgentToolResult:
+        """Move a Morpho vault position to another vault: withdraw, then supply, one approval.
+
+        The approval binds to stable parameters (owner, network, both vaults, token,
+        exact amount) instead of an ephemeral quote, so it survives every host bridge.
+        Execute re-checks the position, withdraws, waits for the receipt and only then
+        supplies the same amount. A failed supply leaves the funds in the wallet and is
+        reported as a partial result; nothing is retried automatically.
+        """
+        action_label = self.MORPHO_REBALANCE_ACTION_LABEL
+        mode = args.get("mode")
+        if mode not in {"intent_preview", "intent_execute"}:
+            raise WalletBackendError("mode must be 'intent_preview' or 'intent_execute'.")
+        purpose = args.get("purpose")
+        if not isinstance(purpose, str) or not purpose.strip():
+            raise WalletBackendError("purpose is required.")
+        from_vault = str(args.get("from_vault_address") or "").strip()
+        to_vault = str(args.get("to_vault_address") or "").strip()
+        if not from_vault or not to_vault:
+            raise WalletBackendError("from_vault_address and to_vault_address are required.")
+        if from_vault.lower() == to_vault.lower():
+            raise WalletBackendError("from_vault_address and to_vault_address must differ.")
+        requested_amount = args.get("amount_raw")
+        if requested_amount is not None:
+            requested_amount = str(requested_amount).strip()
+            if not requested_amount.isdigit() or int(requested_amount) <= 0:
+                raise WalletBackendError("amount_raw must be a positive integer string when provided.")
+        network = str(getattr(active_backend, "network", "unknown"))
+        if network not in {"base", "ethereum"}:
+            raise WalletBackendError("Morpho rebalancing is supported on base and ethereum only.")
+
+        async def find_position() -> dict[str, Any] | None:
+            positions = await active_backend.get_evm_morpho_positions()
+            for position in positions.get("vault_positions") or []:
+                vault = position.get("vault") or {}
+                if str(vault.get("address") or "").lower() == from_vault.lower():
+                    return position
+            return None
+
+        async def build_preview() -> dict[str, Any]:
+            source_lookup = await active_backend.get_evm_morpho_vaults(vault_address=from_vault)
+            target_lookup = await active_backend.get_evm_morpho_vaults(vault_address=to_vault)
+            source = source_lookup.get("vault") or None
+            target = target_lookup.get("vault") or None
+            if not source:
+                raise WalletBackendError(f"Morpho vault {from_vault} was not found on {network}.")
+            if not target:
+                raise WalletBackendError(f"Morpho vault {to_vault} was not found on {network}.")
+            source_asset = str((source.get("asset") or {}).get("address") or "")
+            target_asset = str((target.get("asset") or {}).get("address") or "")
+            if not source_asset or source_asset.lower() != target_asset.lower():
+                raise WalletBackendError("Both vaults must hold the same asset; this tool does not swap.")
+            position = await find_position()
+            if position is None:
+                raise WalletBackendError(f"The wallet has no position in Morpho vault {from_vault} on {network}.")
+            held = str(position.get("assets") or "0")
+            if not held.isdigit() or int(held) <= 0:
+                raise WalletBackendError("The source position has no withdrawable assets.")
+            amount = requested_amount or held
+            if int(amount) > int(held):
+                raise WalletBackendError(f"amount_raw {amount} exceeds the position ({held}).")
+            withdraw_quote = await active_backend.preview_evm_morpho_vault_operation(
+                operation="withdraw",
+                token_address=source_asset,
+                vault_address=from_vault,
+                amount_raw=amount,
+            )
+            # The supply leg cannot be gas-quoted before the funds are in the wallet; its
+            # quote still reports whether an allowance step will run first.
+            try:
+                supply_quote = await active_backend.preview_evm_morpho_vault_operation(
+                    operation="supply",
+                    token_address=source_asset,
+                    vault_address=to_vault,
+                    amount_raw=amount,
+                )
+            except WalletBackendError as exc:
+                supply_quote = {"error": str(exc)}
+
+            def vault_view(vault: dict[str, Any]) -> dict[str, Any]:
+                return {
+                    "address": vault.get("address"),
+                    "name": vault.get("name"),
+                    "version": vault.get("version"),
+                    "listed": vault.get("listed"),
+                    "net_apy": vault.get("netApy"),
+                    "avg_net_apy_7d": vault.get("avgNetApy7d"),
+                    "avg_net_apy_30d": vault.get("avgNetApy30d"),
+                    "total_assets_usd": vault.get("totalAssetsUsd"),
+                    "liquidity_usd": vault.get("liquidityUsd"),
+                    "warnings": vault.get("warnings") or [],
+                }
+
+            target_flags = []
+            if target.get("listed") is False:
+                target_flags.append("target vault is not listed by Morpho")
+            if any(str(w.get("level") or "").upper() == "RED" for w in target.get("warnings") or []):
+                target_flags.append("target vault has a RED warning")
+            asset = source.get("asset") or {}
+            decimals = asset.get("decimals")
+            amount_ui = None
+            if isinstance(decimals, int):
+                amount_ui = format(int(amount) / (10**decimals), "f").rstrip("0").rstrip(".") or "0"
+            return {
+                "asset_type": "evm-morpho-rebalance-intent",
+                "network": network,
+                "owner": await active_backend.get_address(),
+                "from_vault_address": from_vault,
+                "to_vault_address": to_vault,
+                "from_vault": vault_view(source),
+                "to_vault": vault_view(target),
+                "token_address": source_asset,
+                "token_symbol": asset.get("symbol"),
+                "amount_raw": amount,
+                "amount_ui": amount_ui,
+                "position_assets_raw": held,
+                "moves_full_position": amount == held,
+                "target_risk_flags": target_flags,
+                "steps": [
+                    {"step": 1, "action": "withdraw", "vault": from_vault, "amount_raw": amount},
+                    {"step": 2, "action": "supply", "vault": to_vault, "amount_raw": amount},
+                ],
+                "withdraw_estimated_fee_wei": withdraw_quote.get("estimated_fee_wei"),
+                "supply_requirements": supply_quote.get("requirements"),
+                "supply_quote_error": supply_quote.get("error"),
+                "note": (
+                    "Gas is re-quoted when each step is sent. If the supply step fails, the withdrawn "
+                    "funds stay in the wallet and nothing is retried automatically."
+                ),
+                "valid_until_epoch_seconds": int(time.time()) + self.MORPHO_REBALANCE_INTENT_SECONDS,
+            }
+
+        if mode == "intent_preview":
+            preview = await build_preview()
+            return AgentToolResult(
+                tool=tool_name,
+                ok=True,
+                data=self._annotate_sensitive_payload(preview, action_label=action_label, mode="preview"),
+            )
+
+        owner = await active_backend.get_address()
+        approval_token = args.get("approval_token")
+        if isinstance(approval_token, str) and approval_token.strip():
+            expected: dict[str, Any] = {
+                "operation": action_label,
+                "network": network,
+                "owner": owner,
+                "from_vault": from_vault,
+                "to_vault": to_vault,
+                "recipient_policy": "owner-only",
+                "spend_policy": "exact-amount",
+            }
+            if requested_amount is not None:
+                expected["amount_raw"] = requested_amount
+            summary = self._imd_verify_intent_token(
+                approval_token=approval_token.strip(),
+                tool_name=tool_name,
+                action_label=action_label,
+                expected=expected,
+                backend=active_backend,
+            )
+        else:
+            summary = self._build_confirmation_summary(action_label=action_label, payload=await build_preview())
+        amount = str(summary.get("amount_raw") or "")
+        token_address = str(summary.get("token_address") or "")
+        if not amount.isdigit() or int(amount) <= 0 or not token_address:
+            raise WalletBackendError("Approved rebalance intent is incomplete. Preview it again.")
+        self._require_execute_approval(
+            approval_token=approval_token,
+            tool_name=tool_name,
+            summary=summary,
+            action_label=action_label,
+            backend=active_backend,
+        )
+
+        position = await find_position()
+        held = str((position or {}).get("assets") or "0")
+        if not held.isdigit() or int(held) < int(amount):
+            raise WalletBackendError(
+                f"The source position no longer covers the approved amount ({held} < {amount}). Nothing was sent."
+            )
+        base_result: dict[str, Any] = {
+            "asset_type": "evm-morpho-rebalance-intent",
+            "network": network,
+            "from_vault_address": from_vault,
+            "to_vault_address": to_vault,
+            "token_address": token_address,
+            "amount_raw": amount,
+            "purpose": purpose.strip(),
+        }
+        try:
+            withdraw = await active_backend.send_evm_morpho_vault_operation(
+                operation="withdraw",
+                token_address=token_address,
+                vault_address=from_vault,
+                amount_raw=amount,
+            )
+        except WalletBackendError as exc:
+            return AgentToolResult(
+                tool=tool_name,
+                ok=False,
+                data={**base_result, "status": "failed", "failed_step": "withdraw", "funds_location": "source_vault"},
+                error=f"Withdraw failed; funds remain in the source vault: {exc}",
+            )
+        if not withdraw.get("confirmed"):
+            return AgentToolResult(
+                tool=tool_name,
+                ok=False,
+                data={
+                    **base_result,
+                    "status": "withdraw_unconfirmed",
+                    "withdraw": withdraw,
+                    "funds_location": "unknown_until_receipt",
+                },
+                error=(
+                    "The withdraw was sent but not confirmed, so the supply step was not sent. Check the "
+                    "withdraw receipt before doing anything else."
+                ),
+            )
+        try:
+            supply = await active_backend.send_evm_morpho_vault_operation(
+                operation="supply",
+                token_address=token_address,
+                vault_address=to_vault,
+                amount_raw=amount,
+            )
+        except WalletBackendError as exc:
+            return AgentToolResult(
+                tool=tool_name,
+                ok=False,
+                data={
+                    **base_result,
+                    "status": "partial",
+                    "failed_step": "supply",
+                    "withdraw": withdraw,
+                    "funds_location": "wallet",
+                },
+                error=(
+                    f"Withdraw completed but supply failed; the funds are in the wallet: {exc}. "
+                    "Nothing was retried. Supplying them again needs a new confirmation."
+                ),
+            )
+        completed = bool(supply.get("confirmed"))
+        return AgentToolResult(
+            tool=tool_name,
+            ok=completed,
+            data={
+                **base_result,
+                "status": "completed" if completed else "supply_unconfirmed",
+                "withdraw": withdraw,
+                "supply": supply,
+                "funds_location": "target_vault" if completed else "unknown_until_receipt",
+            },
+            error=None if completed else "The supply was sent but not confirmed. Check its receipt.",
+        )
+
     def _imd_verify_intent_token(
         self,
         *,
@@ -445,12 +709,14 @@ class OpenClawWalletAdapter:
         tool_name: str,
         action_label: str,
         expected: dict[str, Any],
+        backend: AgentWalletBackend | None = None,
     ) -> dict[str, Any]:
+        active_backend = backend or self.backend
         approval_payload = inspect_approval_token(
             approval_token,
             tool_name=tool_name,
-            network=str(getattr(self.backend, "network", "unknown")),
-            require_mainnet_confirmation=self._is_mainnet_for_backend(self.backend),
+            network=str(getattr(active_backend, "network", "unknown")),
+            require_mainnet_confirmation=self._is_mainnet_for_backend(active_backend),
         )
         approval_summary = approval_payload.get("binding", {}).get("summary")
         if not isinstance(approval_summary, dict):
@@ -1252,6 +1518,21 @@ class OpenClawWalletAdapter:
                 "liquidity_percentage_to_decrease": request.get("liquidityPercentageToDecrease"),
                 "slippage_tolerance": request.get("slippageTolerance"),
                 "position_manager": payload.get("position_manager"),
+            }
+
+        if asset_type == "evm-morpho-rebalance-intent":
+            return {
+                "operation": action_label,
+                "network": str(payload.get("network") or getattr(self.backend, "network", "unknown")),
+                "owner": payload.get("owner"),
+                "from_vault": payload.get("from_vault_address"),
+                "to_vault": payload.get("to_vault_address"),
+                "token_address": payload.get("token_address"),
+                "amount_raw": payload.get("amount_raw"),
+                "amount_ui": payload.get("amount_ui"),
+                "recipient_policy": "owner-only",
+                "spend_policy": "exact-amount",
+                "valid_until_epoch_seconds": payload.get("valid_until_epoch_seconds"),
             }
 
         if asset_type == "evm-morpho-vault":
@@ -2488,9 +2769,9 @@ class OpenClawWalletAdapter:
                             "30-day net APY averages. Each candidate shows current and average rates, reward share, TVL, "
                             "the position's share of that TVL, warnings, a young-vault flag and `isNew` versus the previous "
                             "scan. The estimated migration gas is shown per position and never removes a candidate. "
-                            "Intended to run every 3 days. Present the findings and let the user decide; moving funds "
-                            "always goes through manage_evm_morpho_vault_position withdraw and supply with the user's "
-                            "explicit confirmation."
+                            "Intended to run every 3 days. Present the findings and let the user decide; to move funds use "
+                            "rebalance_evm_morpho_vault_position (intent_preview, then intent_execute only after the "
+                            "user's explicit confirmation)."
                         ),
                         input_schema={
                             "type": "object",
@@ -2516,6 +2797,47 @@ class OpenClawWalletAdapter:
                         },
                         read_only=True,
                         risk_level="low",
+                    ),                )
+                tools.insert(
+                    19,
+                    AgentToolSpec(
+                        name="rebalance_evm_morpho_vault_position",
+                        description=(
+                            "Move funds from one Morpho vault (V1 or V2) to another vault holding the same asset on the "
+                            "same network (base or ethereum), with one confirmation: withdraw from the source vault, wait "
+                            "for the receipt, then supply the same amount to the target vault. intent_preview checks both "
+                            "vaults and the position, quotes the withdraw and shows current/7d/30d rates of both vaults "
+                            "and any target risk flags; intent_execute runs only after the user explicitly confirms that "
+                            "preview. If the supply step fails the funds stay in the wallet and nothing is retried. "
+                            "Omit amount_raw to move the whole position. No swaps or bridges."
+                        ),
+                        input_schema={
+                            "type": "object",
+                            "properties": {
+                                "from_vault_address": {"type": "string", "description": "Vault the wallet holds now."},
+                                "to_vault_address": {"type": "string", "description": "Vault to move the funds into."},
+                                "amount_raw": {
+                                    "type": "string",
+                                    "description": "Optional amount in the asset's base units; defaults to the whole position.",
+                                },
+                                "mode": {"type": "string", "enum": ["intent_preview", "intent_execute"]},
+                                "purpose": {"type": "string"},
+                                "approval_token": {
+                                    "type": "string",
+                                    "description": "Host-issued approval token required for intent_execute.",
+                                },
+                                "network": {
+                                    "type": "string",
+                                    "enum": ["ethereum", "base"],
+                                    "description": "Optional EVM network override for this request.",
+                                },
+                            },
+                            "required": ["from_vault_address", "to_vault_address", "mode", "purpose"],
+                            "additionalProperties": False,
+                        },
+                        read_only=False,
+                        requires_explicit_user_intent=True,
+                        risk_level="high",
                     ),                )
                 tools.insert(
                     18,
@@ -5306,6 +5628,9 @@ class OpenClawWalletAdapter:
                         "tool": "get_morpho_rebalance_report",
                     }
                 return AgentToolResult(tool=tool_name, ok=True, data=data)
+
+            if tool_name == "rebalance_evm_morpho_vault_position":
+                return await self._invoke_morpho_rebalance(tool_name, args, active_backend)
 
             if tool_name == "get_morpho_rebalance_report":
                 data = await active_backend.get_morpho_rebalance_report(

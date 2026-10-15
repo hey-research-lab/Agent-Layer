@@ -1699,7 +1699,7 @@ const evmToolDefinitions = [
   },
   {
     name: "get_morpho_rebalance_report",
-    description: "Read-only scan of the wallet's Morpho vault positions (V1 and V2) on Base and Ethereum for better vaults holding the same asset on the same chain. A candidate must be listed, carry no red warning, clear the TVL floor and beat the current vault on both the realized 7-day and 30-day net APY averages. Each candidate shows current and average rates, reward share, TVL, the position's share of that TVL, warnings, a young-vault flag and `isNew` versus the previous scan. The estimated migration gas is shown per position and never removes a candidate. Intended to run every 3 days. Present the findings and let the user decide; moving funds always goes through manage_evm_morpho_vault_position withdraw and supply with the user's explicit confirmation.",
+    description: "Read-only scan of the wallet's Morpho vault positions (V1 and V2) on Base and Ethereum for better vaults holding the same asset on the same chain. A candidate must be listed, carry no red warning, clear the TVL floor and beat the current vault on both the realized 7-day and 30-day net APY averages. Each candidate shows current and average rates, reward share, TVL, the position's share of that TVL, warnings, a young-vault flag and `isNew` versus the previous scan. The estimated migration gas is shown per position and never removes a candidate. Intended to run every 3 days. Present the findings and let the user decide; to move funds use rebalance_evm_morpho_vault_position (intent_preview, then intent_execute only after the user's explicit confirmation).",
     parameters: {
       type: "object",
       properties: {
@@ -1711,6 +1711,24 @@ const evmToolDefinitions = [
         min_tvl_usd: { type: "number", minimum: 0, description: "Minimum candidate vault TVL in USD. Defaults to 1000000." },
         candidate_limit: { type: "integer", minimum: 1, maximum: 10, description: "Max candidates per position. Defaults to 3." },
       },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "rebalance_evm_morpho_vault_position",
+    description: "Move funds from one Morpho vault (V1 or V2) to another vault holding the same asset on the same network (base or ethereum), with one confirmation: withdraw from the source vault, wait for the receipt, then supply the same amount to the target vault. intent_preview checks both vaults and the position, quotes the withdraw and shows current/7d/30d rates of both vaults and any target risk flags; intent_execute runs only after the user explicitly confirms that preview. If the supply step fails the funds stay in the wallet and nothing is retried. Omit amount_raw to move the whole position. No swaps or bridges. " + OPENCLAW_EXECUTE_APPROVAL_GUIDANCE,
+    parameters: {
+      type: "object",
+      properties: {
+        from_vault_address: { type: "string", description: "Vault the wallet holds now." },
+        to_vault_address: { type: "string", description: "Vault to move the funds into." },
+        amount_raw: { type: "string", description: "Optional amount in the asset's base units; defaults to the whole position." },
+        mode: { type: "string", enum: ["intent_preview", "intent_execute"] },
+        purpose: { type: "string" },
+        approval_token: { type: "string" },
+        network: { type: "string", enum: ["ethereum", "base"] },
+      },
+      required: ["from_vault_address", "to_vault_address", "mode", "purpose"],
       additionalProperties: false,
     },
   },

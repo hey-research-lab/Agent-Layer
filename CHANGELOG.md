@@ -11,8 +11,17 @@
   young-vault flag. The estimated migration gas is shown and never removes a
   candidate. The wallet remembers each scan per address, marks repeat
   recommendations as already seen, and `get_evm_morpho_positions` reports when
-  the next scan (every 3 days) is due. Moving funds still goes through the
-  existing withdraw and supply previews and confirmations.
+  the next scan (every 3 days) is due. Moving funds goes through the
+  dedicated rebalance tool below.
+- **New `rebalance_evm_morpho_vault_position` tool: move a Morpho position
+  with one confirmation.** `intent_preview` checks both vaults hold the same
+  asset, that the position covers the amount (whole position by default),
+  quotes the withdraw, and shows both vaults' current, 7-day and 30-day rates
+  plus any target risk flags. After the user confirms, `intent_execute`
+  withdraws, waits for the receipt and supplies the same amount. The single-use
+  approval is bound to the owner, network, both vaults, token and amount, so it
+  cannot be redirected to another vault. If the supply step fails the funds
+  stay in the wallet and nothing is retried.
 - **Morpho vault tools keep working after Morpho removes `Asset.priceUsd`
   (2026-10-21).** Every Morpho query now reads `price { usd }`; responses still
   expose `priceUsd`, so callers see no change.
