@@ -69,9 +69,9 @@ test("a vault that beats the current one on 7d and 30d is a candidate", () => {
   assert.ok(Math.abs(candidate.delta30d - 0.015) < 1e-12);
   assert.equal("estimatedYearlyGainUsd" in candidate, false);
   assert.ok(Math.abs(candidate.rewardShare7d - 0.2) < 1e-12);
-  assert.equal(candidate.deposits, "50000000.12");
   assert.equal(candidate.depositsUsd, 50_000_000);
-  assert.ok(Math.abs(candidate.positionShareOfDeposits - 100_000 / 50_100_000) < 1e-12);
+  assert.equal("deposits" in candidate, false);
+  assert.equal("positionShareOfDeposits" in candidate, false);
   assert.equal(candidate.young, false);
 });
 
@@ -148,12 +148,4 @@ test("a position whose vault has no 7d average is skipped with a reason", () => 
   });
   assert.equal(result.candidates.length, 0);
   assert.equal(result.skippedReason, "current_vault_has_no_7d_average");
-});
-
-test("deposits fall back to null when the asset decimals are unknown", () => {
-  const { candidates } = rank([
-    vault("0x00000000000000000000000000000000000000a1", { asset: { address: USDC } }),
-  ]);
-  assert.equal(candidates[0].deposits, null);
-  assert.equal(candidates[0].depositsUsd, 50_000_000);
 });

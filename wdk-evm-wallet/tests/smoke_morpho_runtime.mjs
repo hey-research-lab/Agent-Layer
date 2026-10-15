@@ -1167,8 +1167,8 @@ test("morpho rebalance report shows candidates and never filters them by migrati
     assert.equal(cost.isEstimate, true);
     // A migration cost far above any yield difference still leaves the candidate in place.
     assert.ok(cost.totalFeeUsd > 1000);
-    assert.equal(entry.current.deposits, "7500000");
     assert.equal(entry.current.depositsUsd, 7_500_000);
+    assert.equal("deposits" in entry.current, false);
   });
 
   assert.ok(operations.includes("MorphoNativePrice:8453"));

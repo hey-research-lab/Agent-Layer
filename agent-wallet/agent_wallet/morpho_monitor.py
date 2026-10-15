@@ -135,7 +135,8 @@ MONITOR_PROMPT = (
     "for the wallet, with the number of positions checked. Otherwise, for each position that has a "
     "candidate with isNew true, show the current vault (current rate, 7-day and 30-day averages, "
     "deposits, position size) and each new candidate (7-day and 30-day averages, difference versus "
-    "the current vault, reward share, deposits and positionShareOfDeposits, warnings, young flag), "
+    "the current vault, reward share, deposits, warnings, young flag); show deposits compactly in USD, "
+    "for example $120.7M. "
     "then the estimated migration cost, labelled as an estimate. State plainly that nothing was "
     "moved. End the report with one short sentence offering the best move: the amount and asset, "
     "from which vault to which vault, on which network, and that a preview with the gas estimate "
@@ -278,7 +279,6 @@ def summarize_new_opportunities(network_reports: list[dict[str, Any]] | None) ->
                             "name": current_vault.get("name"),
                             "avg_net_apy_7d": current.get("avgNetApy7d"),
                             "avg_net_apy_30d": current.get("avgNetApy30d"),
-                            "deposits": current.get("deposits"),
                             "deposits_usd": current.get("depositsUsd"),
                         },
                         "to_vault": {
@@ -287,12 +287,10 @@ def summarize_new_opportunities(network_reports: list[dict[str, Any]] | None) ->
                             "version": vault.get("version"),
                             "avg_net_apy_7d": candidate.get("avgNetApy7d"),
                             "avg_net_apy_30d": candidate.get("avgNetApy30d"),
-                            "deposits": candidate.get("deposits"),
                             "deposits_usd": candidate.get("depositsUsd"),
                         },
                         "delta_7d": candidate.get("delta7d"),
                         "reward_share_7d": candidate.get("rewardShare7d"),
-                        "position_share_of_deposits": candidate.get("positionShareOfDeposits"),
                         "young": candidate.get("young"),
                         "warnings": candidate.get("warnings") or [],
                     }

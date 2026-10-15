@@ -23,12 +23,12 @@ an estimate shown to the user; it never removes a candidate.
 3. Otherwise, per position: the current vault (current rate, 7d and 30d
    averages, deposits, position size), then each candidate in a compact
    table: 7d / 30d, difference versus the current vault, reward share,
-   deposits (total supplied to the vault, in the asset and USD) and
-   `positionShareOfDeposits`, warnings, the young flag, and whether it is new
-   since the last scan (`isNew`). Then the migration cost estimate.
+   deposits (total supplied to the vault, shown compactly in USD, e.g.
+   $120.7M), warnings, the young flag, and whether it is new since the last
+   scan (`isNew`). Then the migration cost estimate.
 4. Point out what deserves attention without deciding for the user: a large
-   reward share, a position that would be a big share of a small vault, a
-   young vault, a yellow warning, a vault with small deposits.
+   reward share, a young vault, a yellow warning, a vault with small
+   deposits.
 5. Say plainly that nothing was moved, then end with one short sentence
    offering the best move: amount and asset, from which vault to which, the
    network, and that a preview with gas comes first. For example: "Move

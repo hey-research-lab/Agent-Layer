@@ -1167,7 +1167,6 @@ function rankMorphoRebalanceCandidates({
     return { candidates: [], skippedReason: "current_vault_has_no_7d_average" };
   }
   const assetAddress = position?.vault?.asset?.address;
-  const positionUsd = Number(position?.assetsUsd);
   const candidates = [];
   for (const vault of Array.isArray(vaults) ? vaults : []) {
     if (sameAddress(vault?.address, current.address)) continue;
@@ -1194,14 +1193,8 @@ function rankMorphoRebalanceCandidates({
       rewardShare7d: morphoRewardShare(vault.avgNetApy7d, vault.avgNetApy7dExcludingRewards),
       delta7d,
       delta30d: hasBoth30d ? vault.avgNetApy30d - current.avgNetApy30d : null,
-      // Deposits: everything supplied to the vault, in the asset and in USD.
-      deposits: morphoDepositsAmount(vault.totalAssets, vault.asset?.decimals),
+      // Deposits: everything supplied to the vault, in USD.
       depositsUsd: vault.totalAssetsUsd ?? null,
-      // How large the moved position would be relative to the candidate vault (informational).
-      positionShareOfDeposits:
-        Number.isFinite(positionUsd) && Number(vault.totalAssetsUsd) > 0
-          ? positionUsd / (Number(vault.totalAssetsUsd) + positionUsd)
-          : null,
       liquidityUsd: vault.liquidityUsd ?? null,
       performanceFee: vault.performanceFee ?? null,
       managementFee: vault.managementFee ?? null,
@@ -1211,20 +1204,6 @@ function rankMorphoRebalanceCandidates({
   }
   candidates.sort((left, right) => right.avgNetApy7d - left.avgNetApy7d);
   return { candidates: candidates.slice(0, candidateLimit), skippedReason: null };
-}
-
-// Raw asset units -> a token amount rounded to 2 decimals, or null when unknown.
-function morphoDepositsAmount(totalAssets, decimals) {
-  if (totalAssets === null || totalAssets === undefined || !Number.isInteger(decimals)) {
-    return null;
-  }
-  try {
-    const [whole, fraction = ""] = formatUnits(BigInt(totalAssets), decimals).split(".");
-    const cents = fraction.slice(0, 2).replace(/0+$/, "");
-    return cents ? `${whole}.${cents}` : whole;
-  } catch {
-    return null;
-  }
 }
 
 function normalizeMorphoAsset(asset) {
@@ -3299,7 +3278,6 @@ export class WdkEvmWalletService {
             position.vault.avgNetApy7d,
             position.vault.avgNetApy7dExcludingRewards
           ),
-          deposits: morphoDepositsAmount(currentVault?.totalAssets, currentVault?.asset?.decimals),
           depositsUsd: currentVault?.totalAssetsUsd ?? null,
           liquidityUsd: Number.isFinite(liquidityUsd) ? liquidityUsd : null,
           exitLiquidityCoversPosition:

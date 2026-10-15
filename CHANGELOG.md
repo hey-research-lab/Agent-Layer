@@ -4,9 +4,9 @@
 
 - **Morpho yield report: deposits instead of a yearly estimate.** Each vault in
   the report (the current one and every candidate) now shows its deposits, the
-  total supplied to the vault in the asset and in USD, and each candidate the
-  share of those deposits the moved position would take. The per-candidate
-  extra-per-year estimate is removed. Reports from `/yield`, scheduled runs and
+  total supplied to the vault, compactly in USD (for example $120.7M). The
+  per-candidate extra-per-year estimate and the position's share of the vault
+  are removed. Reports from `/yield`, scheduled runs and
   the automatic check end with one short, concrete offer to move funds (amount,
   from and to vault, network, preview with gas first).
 
