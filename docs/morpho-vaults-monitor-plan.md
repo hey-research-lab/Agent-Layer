@@ -56,7 +56,7 @@ Status: in progress (branch `morpho-vaults-v1-apy`), started 2026-10-15.
    moves it returned; candidates carry `isNew`. Failed networks keep their known moves.
 3. ✅ Due-check: `get_evm_morpho_positions` carries `rebalance_monitor.scan_due` (>3 days since the
    last scan). Native scheduling: `get_morpho_monitor_schedule` (Hermes `cronjob`, OpenClaw `cron`,
-   Claude Code `/wallet:morpho-monitor` scheduled task, Codex `$morpho-monitor` automation).
+   Claude Code `/yield` scheduled task, Codex `$yield` automation).
 4. ✅ Rebalance intent (`rebalance_evm_morpho_vault_position`): withdraw → verify → deposit, one confirmation bound to stable params;
    gas re-quoted at preview time. A failed deposit leaves funds in the wallet and is reported.
 5. ✅ Automatic check (default for everyone with positions): read-only EVM wallet calls run the

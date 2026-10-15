@@ -539,6 +539,8 @@ def _infer_backend_for_tool(tool_name: str) -> str | None:
         or tool_name.startswith("manage_evm_")
         or tool_name.startswith("swap_evm_")
         or tool_name.startswith("transfer_evm_")
+        or tool_name.startswith("rebalance_evm_")
+        or "morpho" in tool_name
         or tool_name == "set_evm_network"
     ):
         return "wdk_evm_local"
@@ -562,7 +564,9 @@ def _infer_backend_for_tool(tool_name: str) -> str | None:
 
 
 def _active_backend_for_tool(tool_name: str) -> str:
-    return selected_wallet_backend or _infer_backend_for_tool(tool_name) or _default_backend()
+    # A chain-specific tool only exists on one backend, so it goes there even when the
+    # session selected the other wallet; otherwise the call could only fail.
+    return _infer_backend_for_tool(tool_name) or selected_wallet_backend or _default_backend()
 
 
 def _network_for_backend(backend: str) -> str:

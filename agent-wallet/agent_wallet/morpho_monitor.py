@@ -194,22 +194,22 @@ def schedule_recipe(host: str) -> dict[str, Any]:
         recipe["delivery"] = "--announce delivers the run's final reply to the user's last chat channel."
     elif normalized == "claude_code":
         recipe["method"] = "desktop_scheduled_task"
-        recipe["task_prompt"] = "/wallet:morpho-monitor"
+        recipe["task_prompt"] = "/wallet:yield"
         recipe["user_steps"] = [
             "Open the Claude desktop app and go to Scheduled tasks (Claude Code).",
             f"Create a task named {JOB_NAME} that runs every {SCAN_INTERVAL_DAYS} days in a folder where "
             "the AgentLayer wallet plugin is enabled.",
-            "Use /wallet:morpho-monitor as the task prompt.",
+            "Use /wallet:yield as the task prompt.",
         ]
         recipe["delivery"] = "The result appears in the task's session; desktop notifications follow app settings."
     else:
         recipe["method"] = "codex_automation"
-        recipe["task_prompt"] = "$morpho-monitor"
+        recipe["task_prompt"] = "$yield"
         recipe["user_steps"] = [
             "Open the Codex app and go to Automations.",
             f"Create an automation named {JOB_NAME} that runs every {SCAN_INTERVAL_DAYS} days in a project "
             "where the AgentLayer wallet plugin is enabled.",
-            "Use $morpho-monitor as the automation prompt.",
+            "Use $yield as the automation prompt.",
         ]
         recipe["delivery"] = "Each run's result appears in the Codex automations inbox."
     return recipe

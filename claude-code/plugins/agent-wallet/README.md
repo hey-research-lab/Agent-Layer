@@ -77,6 +77,12 @@ no-op once the backend is healthy.
 - `/x402` -- discover x402-paid services via CDP Bazaar or Agentic Market
   (or use a URL you already have), preview the payment terms, and pay from
   the connected wallet.
+- `/yield` — scan the wallet's Morpho vault positions on Base and Ethereum for
+  better-yielding vaults with the same asset (current, 7-day and 30-day net
+  APY, reward share, TVL, warnings, estimated migration gas). `/yield schedule`
+  shows how to run it every 3 days; `/yield move` moves a position after an
+  explicit confirmation. The wallet also runs this check by itself on ordinary
+  EVM wallet reads, at most every 3 days.
 - `/agentlayer-autonomous-approve` — enable high-trust autonomous Base swaps
   (`swap_evm_tokens` / `swap_evm_uniswap_tokens` on Base only) without
   per-transaction approvals. In Claude Code this command now asks for an

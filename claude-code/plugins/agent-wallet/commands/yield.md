@@ -1,10 +1,11 @@
 ---
-description: Check the wallet's Morpho vault positions on Base and Ethereum for better vaults, set up a scan every 3 days, or move a position after confirmation.
+description: Scan the wallet's Morpho vault positions on Base and Ethereum for better-yielding vaults with the same asset; optionally schedule the scan every 3 days or move a position after confirmation.
 argument-hint: "[schedule | move <from_vault> <to_vault> [amount_raw]]"
 allowed-tools: AskUserQuestion, mcp__plugin_wallet_agent-wallet__get_active_wallet_backend, mcp__plugin_wallet_agent-wallet__set_wallet_backend, mcp__plugin_wallet_agent-wallet__get_evm_morpho_positions, mcp__plugin_wallet_agent-wallet__get_evm_morpho_vaults, mcp__plugin_wallet_agent-wallet__get_morpho_rebalance_report, mcp__plugin_wallet_agent-wallet__get_morpho_monitor_schedule, mcp__plugin_wallet_agent-wallet__rebalance_evm_morpho_vault_position, mcp__plugin_wallet_agent-wallet__issue_wallet_approval
+disable-model-invocation: true
 ---
 
-# Morpho monitor
+# Yield — Morpho vault scanner
 
 Arguments: `$ARGUMENTS`
 

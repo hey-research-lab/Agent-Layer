@@ -61,6 +61,10 @@ skills:
 - `x402` -- invoke from the slash menu or explicitly as `$x402` to discover
   x402-paid services via CDP Bazaar or Agentic Market (or use a URL already
   given), preview the payment terms, and pay from the connected wallet.
+- `yield` -- invoke from the slash menu or explicitly as `$yield` to scan the
+  wallet's Morpho vault positions on Base and Ethereum for better-yielding
+  vaults with the same asset, set the scan up as a Codex automation every 3
+  days, or move a position after an explicit confirmation.
 - `wallet-sandbox` -- invoke as `$wallet-sandbox` to run the bounded
   real-mainnet release checks: Solana Jupiter, Base Velora and Uniswap, Morpho
   vault supply/withdrawal, and Kamino lending deposit/withdrawal. It requires

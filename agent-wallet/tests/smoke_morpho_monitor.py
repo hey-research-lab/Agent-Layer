@@ -105,8 +105,8 @@ def _check_schedule_recipes() -> None:
     }
     assert openclaw["cli_command"][:3] == ["openclaw", "cron", "add"]
 
-    assert morpho_monitor.schedule_recipe("claude-code")["task_prompt"] == "/wallet:morpho-monitor"
-    assert morpho_monitor.schedule_recipe("codex")["task_prompt"] == "$morpho-monitor"
+    assert morpho_monitor.schedule_recipe("claude-code")["task_prompt"] == "/wallet:yield"
+    assert morpho_monitor.schedule_recipe("codex")["task_prompt"] == "$yield"
     for host in morpho_monitor.SCHEDULE_HOSTS:
         recipe = morpho_monitor.schedule_recipe(host)
         assert recipe["interval_days"] == 3 and recipe["requires_user_consent"] is True

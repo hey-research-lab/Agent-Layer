@@ -65,6 +65,7 @@ covers only its one exact use case:
 | `/wallet-ethereum` | Print the Ethereum mainnet wallet overview. |
 | `/cards` | Buy a Laso Finance prepaid card (US or international), paid via x402 from the connected wallet. |
 | `/x402` | Discover x402-paid services via CDP Bazaar or Agentic Market (or use a URL you already have), preview the terms, and pay from the connected wallet. |
+| `/yield` | Scan Morpho vault positions on Base and Ethereum for better-yielding vaults with the same asset; `schedule` to run it every 3 days, `move` to move a position after confirmation. |
 | `/agentlayer-autonomous-approve` | Turn on the full autonomous permission group (see below), with an in-command confirmation step first. |
 | `/agentlayer-autonomous-revoke` | Turn it back off. |
 | `/guide` | Walk a new user through this document conversationally. |

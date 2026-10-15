@@ -85,6 +85,21 @@ def main() -> None:
         overview_backend = session_two._active_backend_for_tool("get_evm_balance")
         assert overview_backend == "wdk_evm_local"
 
+        # Chain-specific tools reach the only backend that has them, even when the session
+        # selected the other wallet; tools available on both still follow the session.
+        session_two.selected_wallet_backend = "solana_local"
+        for evm_only in (
+            "get_morpho_rebalance_report",
+            "get_morpho_monitor_schedule",
+            "rebalance_evm_morpho_vault_position",
+            "get_evm_morpho_positions",
+        ):
+            assert session_two._active_backend_for_tool(evm_only) == "wdk_evm_local", evm_only
+        assert session_two._active_backend_for_tool("get_wallet_balance") == "solana_local"
+        session_two.selected_wallet_backend = "wdk_evm_local"
+        assert session_two._active_backend_for_tool("get_solana_token_prices") == "solana_local"
+        session_two.selected_wallet_backend = None
+
         # An explicit env override still wins over the remembered default.
         os.environ["WDK_EVM_NETWORK"] = "ethereum"
         assert session_two._default_evm_network() == "ethereum"

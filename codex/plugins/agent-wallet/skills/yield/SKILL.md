@@ -1,9 +1,9 @@
 ---
-name: "morpho-monitor"
-description: "Check the wallet's Morpho vault positions on Base and Ethereum for better vaults with the same asset, set up a scan every 3 days as a Codex automation, or move a position to another vault after explicit confirmation. Use when the user asks for $morpho-monitor, wants their Morpho vault yields compared, or when an automation runs this skill."
+name: "yield"
+description: "Scan the wallet's Morpho vault positions on Base and Ethereum for better vaults with the same asset, set up a scan every 3 days as a Codex automation, or move a position to another vault after explicit confirmation. Use when the user asks for $yield or /yield, wants their Morpho vault yields compared or a better vault found, or when an automation runs this skill."
 ---
 
-# Morpho monitor
+# Yield — Morpho vault scanner
 
 Use the local AgentLayer wallet MCP tools only.
 
@@ -34,7 +34,7 @@ an estimate shown to the user; it never removes a candidate.
 ## Schedule every 3 days
 
 Call `get_morpho_monitor_schedule` with `host: "codex"` and give the user the
-returned `user_steps` (a Codex automation that runs `$morpho-monitor` every
+returned `user_steps` (a Codex automation that runs `$yield` every
 3 days). Set it up only when the user asks for it.
 
 ## Move a position

@@ -57,6 +57,24 @@ def main() -> None:
 
     tools = _load_plugin_module("tools")
 
+    # Chain-specific tools reach the only backend that has them, even with a different
+    # configured default; an explicit backend argument still wins.
+    previous_backend_env = os.environ.get("AGENT_WALLET_BACKEND")
+    os.environ["AGENT_WALLET_BACKEND"] = "solana_local"
+    try:
+        for evm_only in ("get_morpho_rebalance_report", "rebalance_evm_morpho_vault_position"):
+            assert tools._base_config({}, tool_name=evm_only)["backend"] == "wdk_evm_local", evm_only
+        assert tools._base_config({}, tool_name="get_wallet_balance")["backend"] == "solana_local"
+        assert (
+            tools._base_config({"backend": "solana_local"}, tool_name="get_morpho_rebalance_report")["backend"]
+            == "solana_local"
+        )
+    finally:
+        if previous_backend_env is None:
+            os.environ.pop("AGENT_WALLET_BACKEND", None)
+        else:
+            os.environ["AGENT_WALLET_BACKEND"] = previous_backend_env
+
     previous_openclaw_home = os.environ.get("OPENCLAW_HOME")
     with tempfile.TemporaryDirectory() as connector_home:
         os.environ["OPENCLAW_HOME"] = connector_home

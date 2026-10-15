@@ -34,10 +34,17 @@
   `get_morpho_monitor_schedule` returns the one prompt every scheduled run
   executes (scan only, never moves funds) and the recipe for the host: Hermes
   and OpenClaw agents create the job with their own cron tool (`cronjob` /
-  `cron`, every 72h, results delivered to the user's chat); Claude Code gets a
-  `/wallet:morpho-monitor` command and Codex a `$morpho-monitor` skill to run as
-  a desktop scheduled task or automation. The same command and skill show the
-  report on demand and walk through a confirmed move.
+  `cron`, every 72h, results delivered to the user's chat); in Claude Code and
+  Codex the new `/yield` command and `$yield` skill run as a desktop scheduled
+  task or automation.
+- **New `/yield` command (Claude Code) and `yield` skill (Codex).** Scans the
+  wallet's Morpho vault positions for better-yielding vaults on demand,
+  `/yield schedule` sets up the 3-day scan, and `/yield move` moves a position
+  after an explicit confirmation.
+- **Morpho and other chain-specific wallet tools now reach the right wallet.**
+  In Codex, Claude Code, OpenClaw and Hermes a tool that only exists on the EVM
+  (or Solana) backend goes to that backend even when the session or default
+  wallet is the other one, instead of failing with "does not support".
 - **Morpho vault tools keep working after Morpho removes `Asset.priceUsd`
   (2026-10-21).** Every Morpho query now reads `price { usd }`; responses still
   expose `priceUsd`, so callers see no change.

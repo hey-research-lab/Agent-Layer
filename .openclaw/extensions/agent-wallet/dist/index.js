@@ -283,6 +283,8 @@ function inferBackendForTool(toolName) {
     toolName.startsWith("manage_evm_") ||
     toolName.startsWith("swap_evm_") ||
     toolName.startsWith("transfer_evm_") ||
+    toolName.startsWith("rebalance_evm_") ||
+    toolName.includes("morpho") ||
     toolName === "set_evm_network"
   ) {
     return "wdk_evm_local";
@@ -305,7 +307,9 @@ function inferBackendForTool(toolName) {
 }
 
 function activeBackendForTool(api, toolName) {
-  return selectedWalletBackend || inferBackendForTool(toolName) || resolveBackend(api);
+  // A chain-specific tool only exists on one backend, so it goes there even when the
+  // session selected the other wallet; otherwise the call could only fail.
+  return inferBackendForTool(toolName) || selectedWalletBackend || resolveBackend(api);
 }
 
 function networkForBackend(api, backend) {

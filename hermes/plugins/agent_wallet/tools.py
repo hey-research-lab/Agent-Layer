@@ -221,6 +221,8 @@ def _infer_backend_for_tool(tool_name: str) -> str | None:
         or tool_name.startswith("manage_evm_")
         or tool_name.startswith("swap_evm_")
         or tool_name.startswith("transfer_evm_")
+        or tool_name.startswith("rebalance_evm_")
+        or "morpho" in tool_name
         or tool_name == "agent_wallet_evm_status"
         or tool_name == "agent_wallet_evm_setup"
     ):
@@ -284,9 +286,13 @@ def _base_config(args: dict[str, Any], *, tool_name: str | None = None) -> dict[
     if not isinstance(raw, dict):
         raise RuntimeError("config must be a JSON object when provided.")
     config = dict(raw)
-    backend = args.get("backend") or os.getenv("AGENT_WALLET_BACKEND")
-    if not backend and tool_name:
-        backend = _infer_backend_for_tool(tool_name)
+    # Explicit choice first, then the only backend a chain-specific tool exists on, then
+    # the configured default.
+    backend = (
+        args.get("backend")
+        or (_infer_backend_for_tool(tool_name) if tool_name else None)
+        or os.getenv("AGENT_WALLET_BACKEND")
+    )
     if backend:
         config["backend"] = _normalize_backend(backend)
     network = args.get("network") or os.getenv("AGENT_WALLET_NETWORK") or config.get("network")
