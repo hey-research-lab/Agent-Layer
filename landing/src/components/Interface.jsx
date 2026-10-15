@@ -190,23 +190,28 @@ const useReveal = () => {
     return ref
 }
 
+// One pass of seven marks is narrower than the strip on wide screens, which
+// left the track's tail visibly running out; five passes per group keep each
+// group wider than the strip up to 4K, so the -50% loop never shows its end.
 const ToolsGroup = ({ duplicate }) => (
     <div className="oc-tools-group" aria-hidden={duplicate || undefined}>
-        {ONCHAIN_TOOLS.map((tool) => (
-            <span className="oc-tool" key={tool.name}>
-                {tool.logo && (
-                    <img
-                        className="oc-tool-logo"
-                        src={tool.logo}
-                        alt=""
-                        aria-hidden="true"
-                        width="20"
-                        height="20"
-                    />
-                )}
-                <span className="oc-tool-name">{tool.name}</span>
-            </span>
-        ))}
+        {Array.from({ length: 5 }).flatMap((_, cycle) =>
+            ONCHAIN_TOOLS.map((tool) => (
+                <span className="oc-tool" key={`${cycle}-${tool.name}`}>
+                    {tool.logo && (
+                        <img
+                            className="oc-tool-logo"
+                            src={tool.logo}
+                            alt=""
+                            aria-hidden="true"
+                            width="20"
+                            height="20"
+                        />
+                    )}
+                    <span className="oc-tool-name">{tool.name}</span>
+                </span>
+            )),
+        )}
     </div>
 )
 

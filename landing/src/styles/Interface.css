@@ -675,6 +675,11 @@
         display: none;
     }
 
+    /* One pass of the list is enough when nothing moves */
+    .oc-tool:nth-child(n+8) {
+        display: none;
+    }
+
     /* No auto-scroll: lay the frameworks out as a plain wrapped list instead
        of leaving a frozen, half-clipped strip. */
     .hh-marquee {
@@ -981,8 +986,9 @@
     display: flex;
     width: max-content;
     /* ~30px/s — deliberately calmer than the fold's strip, which carries no
-       marks to look at, but close enough that the two don't feel unrelated. */
-    animation: hhMarquee 24s linear infinite;
+       marks to look at, but close enough that the two don't feel unrelated.
+       Each group holds five passes of the list, hence 5 × 24s. */
+    animation: hhMarquee 120s linear infinite;
 }
 
 .oc-marquee:hover .oc-marquee-track {
