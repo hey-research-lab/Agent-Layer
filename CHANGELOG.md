@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.122 - 2026-10-15
+
 - **Morpho yield report: deposits instead of a yearly estimate.** Each vault in
   the report (the current one and every candidate) now shows its deposits, the
   total supplied to the vault, compactly in USD (for example $120.7M). The
