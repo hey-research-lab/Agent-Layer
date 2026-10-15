@@ -8,6 +8,7 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { createBootKeyManager } from "./lib/boot-key.mjs";
+import { releaseCheckPython } from "./lib/release-python.mjs";
 import {
   buildInstallPlan,
   detectHosts,
@@ -1373,11 +1374,7 @@ function verifyRuntime(releaseRoot, env = process.env) {
     return { ok: false, error: `server.py missing at ${serverPy}`, category: "local_env" };
   }
   const python =
-    env.AGENT_WALLET_PYTHON ||
-    env.OPENCLAW_AGENT_WALLET_PYTHON ||
-    resolveVenvPython(releaseRoot) ||
-    commandPath("python3") ||
-    "python3";
+    releaseCheckPython(resolveVenvPython(releaseRoot), env) || commandPath("python3") || "python3";
   const initLine = JSON.stringify({
     jsonrpc: "2.0",
     id: 1,

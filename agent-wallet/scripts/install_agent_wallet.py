@@ -485,6 +485,46 @@ def _pip_install_editable(python_bin: Path, package_root: Path) -> None:
     )
 
 
+def _venv_interpreter_runs(python_bin: Path) -> bool:
+    """Return whether the venv interpreter starts and finds its standard library.
+
+    A venv whose base interpreter moved or cannot locate its stdlib fails before
+    any Python code runs ("No module named 'encodings'"). pip cannot repair that;
+    the venv has to be created again.
+    """
+    try:
+        result = subprocess.run(
+            [str(python_bin), "-c", "import encodings, ssl, venv"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    return result.returncode == 0
+
+
+def _create_venv(venv_path: Path) -> Path:
+    """Create a venv the way ``python -m venv`` does, then prove it starts.
+
+    ``venv.EnvBuilder`` copies the interpreter unless asked for symlinks. A copied
+    interpreter from a relocatable build such as uv's python-build-standalone looks
+    for its standard library next to the copy, does not find it, and dies on
+    startup. Symlinks (the ``python -m venv`` default on POSIX) work for every
+    interpreter kind, so they are used everywhere except Windows.
+    """
+    venv.EnvBuilder(with_pip=True, symlinks=os.name != "nt").create(venv_path)
+    python_bin = _venv_python(venv_path)
+    if not _venv_interpreter_runs(python_bin):
+        shutil.rmtree(venv_path, ignore_errors=True)
+        raise RuntimeError(
+            f"The Python environment created from {sys.executable} cannot start. "
+            "Point OPENCLAW_AGENT_WALLET_PYTHON at another Python 3.10+ interpreter and run the "
+            "install again."
+        )
+    return python_bin
+
+
 def _python_runtime_is_healthy(python_bin: Path) -> bool:
     """Return whether a reusable venv has the installer dependencies available.
 
@@ -516,8 +556,14 @@ def _ensure_python_runtime(
         shared_root = Path(str(plan["shared_root"]))
         shared_venv_path = Path(str(plan["venv_path"]))
         python_bin = _venv_python(shared_venv_path)
+        if (python_bin.exists() or python_bin.is_symlink()) and not _venv_interpreter_runs(python_bin):
+            # A cached venv whose interpreter no longer starts (one an older installer
+            # copied from a relocatable Python, or a symlink to an interpreter that was
+            # since removed) cannot be repaired with pip; rebuild it from scratch.
+            shutil.rmtree(shared_venv_path, ignore_errors=True)
+            plan["action"] = "rebuild"
         if not python_bin.exists():
-            venv.EnvBuilder(with_pip=True).create(shared_venv_path)
+            python_bin = _create_venv(shared_venv_path)
             created = True
             _bootstrap_venv_pip(python_bin)
             _pip_install_editable(python_bin, package_root)
@@ -530,7 +576,7 @@ def _ensure_python_runtime(
             plan["action"] = "repair"
         shared_wrapper = _ensure_python_wrapper(shared_venv_path)
         _replace_with_directory_symlink(venv_path, shared_venv_path)
-        if created:
+        if created and plan["action"] != "rebuild":
             plan["action"] = "create"
         plan["exists"] = True
         return (
@@ -540,8 +586,10 @@ def _ensure_python_runtime(
         )
 
     python_bin = _venv_python(venv_path)
+    if (python_bin.exists() or python_bin.is_symlink()) and not _venv_interpreter_runs(python_bin):
+        shutil.rmtree(venv_path, ignore_errors=True)
     if not python_bin.exists():
-        venv.EnvBuilder(with_pip=True).create(venv_path)
+        python_bin = _create_venv(venv_path)
         created = True
         _bootstrap_venv_pip(python_bin)
 

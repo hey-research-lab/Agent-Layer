@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
+import { releaseCheckPython } from "./release-python.mjs";
+
 function readEnv(pathname) {
   try {
     const result = {};
@@ -153,10 +155,7 @@ export function createBootKeyManager({
     if (!fs.existsSync(sealedPath)) return { ok: true, required: false };
     const key = String(env.AGENT_WALLET_BOOT_KEY || "").trim();
     if (!key) return { ok: false, required: true, error: "no verified boot key is available" };
-    const python =
-      env.AGENT_WALLET_PYTHON ||
-      env.OPENCLAW_AGENT_WALLET_PYTHON ||
-      resolveVenvPython(releaseRoot);
+    const python = releaseCheckPython(resolveVenvPython(releaseRoot), env);
     if (!python) {
       if (String(env.AGENT_WALLET_VERIFY_DISABLE || "") === "1") {
         return { ok: true, required: true, skipped: true };

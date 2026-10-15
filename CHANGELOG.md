@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Install and update work with a Python installed by uv.** The installer
+  copied the interpreter into the wallet's venv; a copied uv (python-build-
+  standalone) interpreter cannot find its standard library and died with
+  `No module named 'encodings'`. Venvs are now created with symlinks, like
+  `python -m venv`, and checked right after creation. An existing venv whose
+  interpreter no longer starts is rebuilt instead of failing the update, so
+  `update` repairs machines left broken by earlier versions.
+- **Release verification uses the new release's own Python.** It used
+  `OPENCLAW_AGENT_WALLET_PYTHON` or the previous runtime's Python first, so
+  pointing the installer at another interpreter made a good release fail with
+  `No module named 'fastmcp'` and roll back. Both the MCP handshake and the
+  boot-key check now run with the staged release's venv.
+
 ## v0.1.120 - 2026-10-15
 
 - **New `get_morpho_rebalance_report` tool: a read-only scan for better Morpho
