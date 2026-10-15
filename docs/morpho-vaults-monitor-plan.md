@@ -54,7 +54,8 @@ Status: in progress (branch `morpho-vaults-v1-apy`), started 2026-10-15.
    Young vaults (<30d history) flagged.
 2. ✅ State under `OPENCLAW_HOME/defi_monitor/morpho_rebalance.json`: last scan per address and the
    moves it returned; candidates carry `isNew`. Failed networks keep their known moves.
-3. ½ Due-check: `get_evm_morpho_positions` carries `rebalance_monitor.scan_due` (>3 days since the
-   last scan). Native scheduling per host: pending.
+3. ✅ Due-check: `get_evm_morpho_positions` carries `rebalance_monitor.scan_due` (>3 days since the
+   last scan). Native scheduling: `get_morpho_monitor_schedule` (Hermes `cronjob`, OpenClaw `cron`,
+   Claude Code `/wallet:morpho-monitor` scheduled task, Codex `$morpho-monitor` automation).
 4. ✅ Rebalance intent (`rebalance_evm_morpho_vault_position`): withdraw → verify → deposit, one confirmation bound to stable params;
    gas re-quoted at preview time. A failed deposit leaves funds in the wallet and is reported.

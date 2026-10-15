@@ -1733,6 +1733,18 @@ const evmToolDefinitions = [
     },
   },
   {
+    name: "get_morpho_monitor_schedule",
+    description: "Read-only. Returns how to run the Morpho rebalance monitor every 3 days on the given agent host: the exact prompt each scheduled run executes (it calls get_morpho_rebalance_report and never moves funds), plus the host's scheduling recipe. On openclaw the agent creates the job with its own cron tool using the returned job (isolated session, every 72h, announce). Create a schedule only after the user asks for monitoring.",
+    parameters: {
+      type: "object",
+      properties: {
+        host: { type: "string", enum: ["claude_code", "codex", "openclaw", "hermes"], description: "The agent host the schedule is for." },
+      },
+      required: ["host"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "manage_evm_morpho_vault_position",
     description: "Preview, prepare, or execute a narrow Morpho vault operation on supported EVM mainnet networks. Supported operations are supply and withdraw. Preview or prepare first. After the user explicitly confirms the shown summary in chat, call execute; the OpenClaw plugin handles the internal execution authorization automatically.",
     optional: true,

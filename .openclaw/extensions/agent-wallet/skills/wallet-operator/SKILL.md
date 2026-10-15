@@ -22,3 +22,6 @@ Safety rules:
 - Never claim funds moved unless the tool returns a confirmed transaction result.
 - If the wallet is configured as `signOnly`, describe `prepare` output as an execution plan only, not a signed transaction.
 - Use native staking read tools first when the user asks about validators, stake accounts, deactivation, or withdrawals.
+- For Morpho vault yield monitoring, `get_morpho_rebalance_report` scans the wallet's Morpho vault positions on Base and Ethereum for better vaults with the same asset. It only reads; present its candidates and let the user decide. Migration gas in it is an estimate and never a reason to hide a candidate.
+- To scan every 3 days, call `get_morpho_monitor_schedule` with this host (`openclaw` or `hermes`) and, only after the user asks for monitoring, create the job with your own cron tool using the returned arguments. A scheduled run never moves funds.
+- To move a Morpho position, use `rebalance_evm_morpho_vault_position`: `intent_preview`, then `intent_execute` with identical arguments only after the user explicitly confirms the previewed move. If it reports `status: partial`, the funds are in the wallet; say so and do not retry on your own.

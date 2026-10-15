@@ -22,6 +22,14 @@
   approval is bound to the owner, network, both vaults, token and amount, so it
   cannot be redirected to another vault. If the supply step fails the funds
   stay in the wallet and nothing is retried.
+- **Morpho monitor every 3 days on every host.** New read-only
+  `get_morpho_monitor_schedule` returns the one prompt every scheduled run
+  executes (scan only, never moves funds) and the recipe for the host: Hermes
+  and OpenClaw agents create the job with their own cron tool (`cronjob` /
+  `cron`, every 72h, results delivered to the user's chat); Claude Code gets a
+  `/wallet:morpho-monitor` command and Codex a `$morpho-monitor` skill to run as
+  a desktop scheduled task or automation. The same command and skill show the
+  report on demand and walk through a confirmed move.
 - **Morpho vault tools keep working after Morpho removes `Asset.priceUsd`
   (2026-10-21).** Every Morpho query now reads `price { usd }`; responses still
   expose `priceUsd`, so callers see no change.

@@ -2840,6 +2840,33 @@ class OpenClawWalletAdapter:
                         risk_level="high",
                     ),                )
                 tools.insert(
+                    20,
+                    AgentToolSpec(
+                        name="get_morpho_monitor_schedule",
+                        description=(
+                            "Read-only. Returns how to run the Morpho rebalance monitor every 3 days on the given agent "
+                            "host: the exact prompt each scheduled run executes (it calls get_morpho_rebalance_report "
+                            "and never moves funds), plus the host's scheduling recipe. On hermes and openclaw the "
+                            "agent creates the job with its own cron tool (cronjob / cron) using the returned "
+                            "arguments; on claude_code and codex it returns the steps for the user to create a "
+                            "scheduled task or automation. Create a schedule only after the user asks for monitoring."
+                        ),
+                        input_schema={
+                            "type": "object",
+                            "properties": {
+                                "host": {
+                                    "type": "string",
+                                    "enum": ["claude_code", "codex", "openclaw", "hermes"],
+                                    "description": "The agent host the schedule is for.",
+                                },
+                            },
+                            "required": ["host"],
+                            "additionalProperties": False,
+                        },
+                        read_only=True,
+                        risk_level="low",
+                    ),                )
+                tools.insert(
                     18,
                     AgentToolSpec(
                         name="manage_evm_morpho_vault_position",
@@ -5628,6 +5655,14 @@ class OpenClawWalletAdapter:
                         "tool": "get_morpho_rebalance_report",
                     }
                 return AgentToolResult(tool=tool_name, ok=True, data=data)
+
+            if tool_name == "get_morpho_monitor_schedule":
+                try:
+                    recipe = morpho_monitor.schedule_recipe(str(args.get("host") or ""))
+                except ValueError as exc:
+                    raise WalletBackendError(str(exc)) from exc
+                recipe["scan_status"] = morpho_monitor.scan_status(await active_backend.get_address())
+                return AgentToolResult(tool=tool_name, ok=True, data=recipe)
 
             if tool_name == "rebalance_evm_morpho_vault_position":
                 return await self._invoke_morpho_rebalance(tool_name, args, active_backend)

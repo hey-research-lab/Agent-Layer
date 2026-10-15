@@ -132,6 +132,12 @@ Use this skill before calling OpenClaw wallet tools. It is the routing guide for
 4. For `execute`, use the same semantic params after the user's chat confirmation. Do not mutate amount, token, destination, network, slippage, or minimum output between preview and execute; do not ask the user for a token or out-of-chat approval action.
 5. For cross-chain swaps, after execute, offer `get_lifi_transfer_status` using the source tx hash and bridge/tool if returned.
 
+## Morpho Vault Monitoring
+
+- `get_morpho_rebalance_report` scans the wallet's Morpho vault positions (V1 and V2) on Base and Ethereum for better vaults with the same asset on the same chain. It only reads; present its candidates and let the user decide. Migration gas in it is an estimate and never a reason to hide a candidate.
+- To scan every 3 days, call `get_morpho_monitor_schedule` with the current host and follow the returned recipe only after the user asks for monitoring. On Hermes and OpenClaw create the job with the agent's own cron tool using the returned arguments. A scheduled run never moves funds.
+- To move a position, use `rebalance_evm_morpho_vault_position`: `intent_preview`, then `intent_execute` with identical arguments only after the user explicitly confirms the previewed move. If it reports `status: partial`, the funds are in the wallet; say so and do not retry on your own.
+
 ## Disabled Or Avoided Paths
 
 - Do not invent generic calldata, arbitrary contract calls, token approvals, or non-listed bridge providers.

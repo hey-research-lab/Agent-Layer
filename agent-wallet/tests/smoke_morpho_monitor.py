@@ -78,7 +78,44 @@ def main() -> None:
         path.write_text("{not json", encoding="utf-8")
         assert morpho_monitor.scan_status(ADDRESS, path=path, now=START)["scan_due"] is True, "corrupt state is ignored"
 
+    _check_schedule_recipes()
     print("smoke_morpho_monitor: ok")
+
+
+def _check_schedule_recipes() -> None:
+    prompt = morpho_monitor.MONITOR_PROMPT
+    assert "get_morpho_rebalance_report" in prompt
+    assert "Do not call any wallet write tool" in prompt, "scheduled runs must stay read-only"
+
+    hermes = morpho_monitor.schedule_recipe("hermes")
+    call = hermes["agent_tool_call"]
+    assert call["tool"] == "cronjob" and call["arguments"]["action"] == "create"
+    assert call["arguments"]["schedule"] == "every 72h"
+    assert call["arguments"]["toolsets"] == ["agent_wallet"]
+    assert "deliver" not in call["arguments"], "omitting deliver keeps results in the originating chat"
+    assert hermes["cli_command"][:4] == ["hermes", "cron", "create", "every 72h"]
+
+    openclaw = morpho_monitor.schedule_recipe("openclaw")
+    assert openclaw["job"] == {
+        "name": morpho_monitor.JOB_NAME,
+        "every": "72h",
+        "session": "isolated",
+        "message": prompt,
+        "announce": True,
+    }
+    assert openclaw["cli_command"][:3] == ["openclaw", "cron", "add"]
+
+    assert morpho_monitor.schedule_recipe("claude-code")["task_prompt"] == "/wallet:morpho-monitor"
+    assert morpho_monitor.schedule_recipe("codex")["task_prompt"] == "$morpho-monitor"
+    for host in morpho_monitor.SCHEDULE_HOSTS:
+        recipe = morpho_monitor.schedule_recipe(host)
+        assert recipe["interval_days"] == 3 and recipe["requires_user_consent"] is True
+    try:
+        morpho_monitor.schedule_recipe("cursor")
+    except ValueError as exc:
+        assert "host must be one of" in str(exc)
+    else:
+        raise AssertionError("unknown hosts must be rejected")
 
 
 if __name__ == "__main__":

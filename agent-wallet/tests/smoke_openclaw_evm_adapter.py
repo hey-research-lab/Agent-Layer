@@ -1728,6 +1728,8 @@ async def _main() -> None:
     assert "get_evm_morpho_markets" in tool_names
     assert "get_evm_morpho_positions" in tool_names
     assert "get_morpho_rebalance_report" in tool_names
+    assert "get_morpho_monitor_schedule" in tool_names
+    assert "rebalance_evm_morpho_vault_position" in tool_names
     assert "manage_evm_morpho_vault_position" in tool_names
     assert "manage_evm_morpho_market_position" in tool_names
     assert "get_evm_lido_overview" in tool_names
@@ -2187,6 +2189,13 @@ async def _main() -> None:
 
             morpho_positions = await adapter.invoke("get_evm_morpho_positions", {"network": "base"})
             assert morpho_positions.data["rebalance_monitor"]["scan_due"] is False
+
+            schedule = await adapter.invoke("get_morpho_monitor_schedule", {"host": "hermes"})
+            assert schedule.ok is True
+            assert schedule.data["agent_tool_call"]["tool"] == "cronjob"
+            assert schedule.data["scan_status"]["scan_due"] is False
+            bad_host = await adapter.invoke("get_morpho_monitor_schedule", {"host": "cursor"})
+            assert bad_host.ok is False
             assert (Path(monitor_home) / "defi_monitor" / "morpho_rebalance.json").exists()
         finally:
             if previous_openclaw_home is None:
