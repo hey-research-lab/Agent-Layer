@@ -2766,9 +2766,10 @@ class OpenClawWalletAdapter:
                         description=(
                             "Read-only scan of the wallet's Morpho vault positions (V1 and V2) on Base and Ethereum for "
                             "better vaults holding the same asset on the same chain. A candidate must be listed, carry no "
-                            "red warning, clear the TVL floor and beat the current vault on both the realized 7-day and "
-                            "30-day net APY averages. Each candidate shows current and average rates, reward share, TVL, "
-                            "the position's share of that TVL, warnings, a young-vault flag and `isNew` versus the previous "
+                            "red warning, clear the deposits floor and beat the current vault on both the realized 7-day "
+                            "and 30-day net APY averages. Each candidate shows current and average rates, reward share, "
+                            "deposits (total supplied to the vault, in the asset and USD), the position's share of those "
+                            "deposits, warnings, a young-vault flag and `isNew` versus the previous "
                             "scan. The estimated migration gas is shown per position and never removes a candidate. "
                             "Intended to run every 3 days. Present the findings and let the user decide; to move funds use "
                             "rebalance_evm_morpho_vault_position (intent_preview, then intent_execute only after the "
@@ -2785,7 +2786,7 @@ class OpenClawWalletAdapter:
                                 "min_tvl_usd": {
                                     "type": "number",
                                     "minimum": 0,
-                                    "description": "Minimum candidate vault TVL in USD. Defaults to 1000000.",
+                                    "description": "Minimum candidate vault deposits (TVL) in USD. Defaults to 1000000.",
                                 },
                                 "candidate_limit": {
                                     "type": "integer",
@@ -4862,10 +4863,12 @@ class OpenClawWalletAdapter:
             "next_scan_due_at": meta.get("next_scan_due_at"),
             "agent_instruction": (
                 "Automatic Morpho check (read-only, nothing was moved). After answering the user's request, "
-                "briefly tell them that better Morpho vaults were found for their positions, with the rates. "
-                "For full details and the migration gas estimate call get_morpho_rebalance_report; to move funds "
-                "use rebalance_evm_morpho_vault_position (intent_preview, then intent_execute only after explicit "
-                "confirmation). Do not move funds unprompted."
+                "briefly tell them that better Morpho vaults were found for their positions, with the rates and "
+                "deposits, then offer the best move in one short sentence (amount and asset, from which vault to "
+                "which, network, preview with gas first). For full details and the migration gas estimate call "
+                "get_morpho_rebalance_report; to move funds use rebalance_evm_morpho_vault_position "
+                "(intent_preview, then intent_execute only after explicit confirmation). Do not move funds "
+                "unprompted."
             ),
         }
         return result.model_copy(update={"data": {**result.data, "morpho_monitor_notice": notice}})

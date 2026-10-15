@@ -1703,7 +1703,7 @@ const evmToolDefinitions = [
   },
   {
     name: "get_morpho_rebalance_report",
-    description: "Read-only scan of the wallet's Morpho vault positions (V1 and V2) on Base and Ethereum for better vaults holding the same asset on the same chain. A candidate must be listed, carry no red warning, clear the TVL floor and beat the current vault on both the realized 7-day and 30-day net APY averages. Each candidate shows current and average rates, reward share, TVL, the position's share of that TVL, warnings, a young-vault flag and `isNew` versus the previous scan. The estimated migration gas is shown per position and never removes a candidate. Intended to run every 3 days. Present the findings and let the user decide; to move funds use rebalance_evm_morpho_vault_position (intent_preview, then intent_execute only after the user's explicit confirmation).",
+    description: "Read-only scan of the wallet's Morpho vault positions (V1 and V2) on Base and Ethereum for better vaults holding the same asset on the same chain. A candidate must be listed, carry no red warning, clear the deposits floor and beat the current vault on both the realized 7-day and 30-day net APY averages. Each candidate shows current and average rates, reward share, deposits (total supplied to the vault, in the asset and USD), the position's share of those deposits, warnings, a young-vault flag and `isNew` versus the previous scan. The estimated migration gas is shown per position and never removes a candidate. Intended to run every 3 days. Present the findings and let the user decide; to move funds use rebalance_evm_morpho_vault_position (intent_preview, then intent_execute only after the user's explicit confirmation).",
     parameters: {
       type: "object",
       properties: {
@@ -1712,7 +1712,7 @@ const evmToolDefinitions = [
           items: { type: "string", enum: ["base", "ethereum"] },
           description: "Networks to scan. Defaults to base and ethereum.",
         },
-        min_tvl_usd: { type: "number", minimum: 0, description: "Minimum candidate vault TVL in USD. Defaults to 1000000." },
+        min_tvl_usd: { type: "number", minimum: 0, description: "Minimum candidate vault deposits (TVL) in USD. Defaults to 1000000." },
         candidate_limit: { type: "integer", minimum: 1, maximum: 10, description: "Max candidates per position. Defaults to 3." },
       },
       additionalProperties: false,

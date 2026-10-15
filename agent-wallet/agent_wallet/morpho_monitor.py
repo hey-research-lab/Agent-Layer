@@ -134,12 +134,14 @@ MONITOR_PROMPT = (
     "If monitor.new_opportunity_count is 0, reply with one short line: no new better Morpho vaults "
     "for the wallet, with the number of positions checked. Otherwise, for each position that has a "
     "candidate with isNew true, show the current vault (current rate, 7-day and 30-day averages, "
-    "position size) and each new candidate (7-day and 30-day averages, difference versus the "
-    "current vault, estimatedYearlyGainUsd, reward share, TVL and positionShareOfTvl, warnings, "
-    "young flag), then the estimated migration cost, labelled as an estimate. State plainly that "
-    "nothing was moved. End by asking whether the user wants to move a position; a move would use "
-    "rebalance_evm_morpho_vault_position, starting with intent_preview and executing only after "
-    "the user explicitly confirms."
+    "deposits, position size) and each new candidate (7-day and 30-day averages, difference versus "
+    "the current vault, reward share, deposits and positionShareOfDeposits, warnings, young flag), "
+    "then the estimated migration cost, labelled as an estimate. State plainly that nothing was "
+    "moved. End the report with one short sentence offering the best move: the amount and asset, "
+    "from which vault to which vault, on which network, and that a preview with the gas estimate "
+    "comes first, for example 'Move 1,000 USDC from Steakhouse USDC to Gauntlet USDC Prime on Base? "
+    "Say yes and I will show the preview with gas first.' A move uses rebalance_evm_morpho_vault_position, "
+    "starting with intent_preview and executing only after the user explicitly confirms."
 )
 
 
@@ -276,6 +278,8 @@ def summarize_new_opportunities(network_reports: list[dict[str, Any]] | None) ->
                             "name": current_vault.get("name"),
                             "avg_net_apy_7d": current.get("avgNetApy7d"),
                             "avg_net_apy_30d": current.get("avgNetApy30d"),
+                            "deposits": current.get("deposits"),
+                            "deposits_usd": current.get("depositsUsd"),
                         },
                         "to_vault": {
                             "address": vault.get("address"),
@@ -283,11 +287,12 @@ def summarize_new_opportunities(network_reports: list[dict[str, Any]] | None) ->
                             "version": vault.get("version"),
                             "avg_net_apy_7d": candidate.get("avgNetApy7d"),
                             "avg_net_apy_30d": candidate.get("avgNetApy30d"),
+                            "deposits": candidate.get("deposits"),
+                            "deposits_usd": candidate.get("depositsUsd"),
                         },
                         "delta_7d": candidate.get("delta7d"),
-                        "estimated_yearly_gain_usd": candidate.get("estimatedYearlyGainUsd"),
                         "reward_share_7d": candidate.get("rewardShare7d"),
-                        "position_share_of_tvl": candidate.get("positionShareOfTvl"),
+                        "position_share_of_deposits": candidate.get("positionShareOfDeposits"),
                         "young": candidate.get("young"),
                         "warnings": candidate.get("warnings") or [],
                     }

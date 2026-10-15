@@ -65,6 +65,8 @@ class FakeScanBackend(AgentWalletBackend):
                                 "vault": {"address": "0xA1", "name": "Current USDC"},
                                 "asset": {"symbol": "USDC"},
                                 "assetsUsd": 1000,
+                                "deposits": "120000000",
+                                "depositsUsd": 120000000,
                                 "avgNetApy7d": 0.035,
                                 "avgNetApy30d": 0.033,
                             },
@@ -74,9 +76,10 @@ class FakeScanBackend(AgentWalletBackend):
                                     "avgNetApy7d": 0.05,
                                     "avgNetApy30d": 0.048,
                                     "delta7d": 0.015,
-                                    "estimatedYearlyGainUsd": 15,
                                     "rewardShare7d": 0.1,
-                                    "positionShareOfTvl": 0.0001,
+                                    "deposits": "48000000.5",
+                                    "depositsUsd": 48000000.5,
+                                    "positionShareOfDeposits": 0.00002,
                                     "young": False,
                                     "warnings": [],
                                 }
@@ -120,7 +123,12 @@ async def _main() -> None:
     [row] = notice["new_opportunities"]
     assert row["from_vault"]["name"] == "Current USDC" and row["to_vault"]["name"] == "Better USDC"
     assert row["delta_7d"] == 0.015 and row["asset"] == "USDC"
+    assert row["to_vault"]["deposits"] == "48000000.5" and row["to_vault"]["deposits_usd"] == 48000000.5
+    assert row["from_vault"]["deposits_usd"] == 120000000
+    assert row["position_share_of_deposits"] == 0.00002
+    assert "estimated_yearly_gain_usd" not in row
     assert "Do not move funds" in notice["agent_instruction"]
+    assert "offer the best move" in notice["agent_instruction"]
     assert backend.scan_calls == [{"include_migration_cost": False}], "auto scan skips the slow cost estimate"
 
     second = await adapter.invoke("get_wallet_address", {})

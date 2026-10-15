@@ -1133,7 +1133,19 @@ test("morpho rebalance report shows candidates and never filters them by migrati
           ],
         },
       },
-      MorphoVaultByAddress: { v1: { items: [{ address: current, liquidity: { usd: 5000 }, state: {} }] }, v2: { items: [] } },
+      MorphoVaultByAddress: {
+        v1: {
+          items: [
+            {
+              address: current,
+              asset: { address: usdc, decimals: 6, price: { usd: 1 } },
+              liquidity: { usd: 5000 },
+              state: { totalAssets: "7500000000000", totalAssetsUsd: 7_500_000 },
+            },
+          ],
+        },
+        v2: { items: [] },
+      },
       MorphoNativePrice: { assets: { items: [{ price: { usd: 2000 } }] } },
     }[body.operationName];
     return { ok: true, status: 200, async json() { return { data }; } };
@@ -1153,7 +1165,10 @@ test("morpho rebalance report shows candidates and never filters them by migrati
     assert.equal(entry.candidates[0].vault.address, better);
     const cost = entry.migrationCostEstimate;
     assert.equal(cost.isEstimate, true);
-    assert.ok(cost.totalFeeUsd > entry.candidates[0].estimatedYearlyGainUsd);
+    // A migration cost far above any yield difference still leaves the candidate in place.
+    assert.ok(cost.totalFeeUsd > 1000);
+    assert.equal(entry.current.deposits, "7500000");
+    assert.equal(entry.current.depositsUsd, 7_500_000);
   });
 
   assert.ok(operations.includes("MorphoNativePrice:8453"));

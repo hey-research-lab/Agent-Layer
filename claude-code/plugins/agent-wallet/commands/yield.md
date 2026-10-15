@@ -11,7 +11,7 @@ Arguments: `$ARGUMENTS`
 
 The monitor compares the wallet's Morpho vault positions (V1 and V2) on Base
 and Ethereum with other vaults holding the same asset on the same chain. A
-candidate is listed, has no red warning, clears a $1M TVL floor and beats the
+candidate is listed, has no red warning, has at least $1M in deposits and beats the
 current vault on both the realized 7-day and 30-day net APY. Migration gas is
 an estimate shown to the user; it never removes a candidate.
 
@@ -22,15 +22,20 @@ an estimate shown to the user; it never removes a candidate.
    in one line that no better vaults were found and how many positions were
    checked.
 3. Otherwise, per position: the current vault (current rate, 7d and 30d
-   averages, position size), then each candidate in a compact table: 7d / 30d,
-   difference versus the current vault, `estimatedYearlyGainUsd`, reward
-   share, TVL and `positionShareOfTvl`, warnings, the young flag, and whether
-   it is new since the last scan. Then the migration cost estimate.
+   averages, deposits, position size), then each candidate in a compact
+   table: 7d / 30d, difference versus the current vault, reward share,
+   deposits (total supplied to the vault, in the asset and USD) and
+   `positionShareOfDeposits`, warnings, the young flag, and whether it is new
+   since the last scan (`isNew`). Then the migration cost estimate.
 4. Point out what deserves attention without deciding for the user: a large
    reward share, a position that would be a big share of a small vault, a
-   young vault, a yellow warning.
-5. Say plainly that nothing was moved, and ask whether the user wants to move
-   a position.
+   young vault, a yellow warning, a vault with small deposits.
+5. Say plainly that nothing was moved, then end with one short sentence
+   offering the best move: amount and asset, from which vault to which, the
+   network, and that a preview with gas comes first. For example: "Move
+   1,000 USDC from Steakhouse USDC to Gauntlet USDC Prime on Base? Say yes and
+   I will show the preview with gas first." If the user agrees, follow the
+   move steps below.
 
 ## `schedule` — run the scan every 3 days
 

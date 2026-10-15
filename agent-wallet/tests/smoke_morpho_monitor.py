@@ -86,6 +86,8 @@ def _check_schedule_recipes() -> None:
     prompt = morpho_monitor.MONITOR_PROMPT
     assert "get_morpho_rebalance_report" in prompt
     assert "Do not call any wallet write tool" in prompt, "scheduled runs must stay read-only"
+    assert "offering the best move" in prompt and "deposits" in prompt
+    assert "estimatedYearlyGainUsd" not in prompt
 
     hermes = morpho_monitor.schedule_recipe("hermes")
     call = hermes["agent_tool_call"]
