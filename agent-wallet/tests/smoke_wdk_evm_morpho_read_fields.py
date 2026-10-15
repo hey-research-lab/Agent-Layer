@@ -80,9 +80,35 @@ def _check_vaults() -> None:
     assert result["vaults"] == [vault], "vault records must pass through unchanged"
 
 
+def _check_rebalance_report() -> None:
+    network_report = {"network": "base", "chainId": 8453, "error": None, "positions": [{"candidates": []}]}
+    backend = _backend(
+        {
+            "protocol": "morpho",
+            "address": ADDRESS,
+            "scannedAt": "2026-10-15T12:00:00.000Z",
+            "networks": ["base", "ethereum"],
+            "criteria": {"migrationCostFiltersCandidates": False},
+            "positionCount": 1,
+            "opportunityCount": 0,
+            "networkReports": [network_report],
+        }
+    )
+    result = asyncio.run(backend.get_morpho_rebalance_report(networks=["Base"], min_tvl_usd=5_000_000, candidate_limit=2))
+    path, body = backend.client.calls[0]
+    assert path == "/v1/evm/morpho/rebalance-report/get"
+    assert body["networks"] == ["base"] and body["minTvlUsd"] == 5_000_000 and body["candidateLimit"] == 2
+    assert body["address"] == ADDRESS
+    assert result["scanned_at"] == "2026-10-15T12:00:00.000Z"
+    assert result["position_count"] == 1 and result["opportunity_count"] == 0
+    assert result["criteria"]["migrationCostFiltersCandidates"] is False
+    assert result["network_reports"] == [network_report], "network reports must pass through unchanged"
+
+
 def main() -> None:
     _check_positions()
     _check_vaults()
+    _check_rebalance_report()
     print("smoke_wdk_evm_morpho_read_fields: ok")
 
 

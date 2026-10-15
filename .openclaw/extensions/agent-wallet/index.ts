@@ -1698,6 +1698,23 @@ const evmToolDefinitions = [
     },
   },
   {
+    name: "get_morpho_rebalance_report",
+    description: "Read-only scan of the wallet's Morpho vault positions (V1 and V2) on Base and Ethereum for better vaults holding the same asset on the same chain. A candidate must be listed, carry no red warning, clear the TVL floor and beat the current vault on both the realized 7-day and 30-day net APY averages. Each candidate shows current and average rates, reward share, TVL, the position's share of that TVL, warnings, a young-vault flag and `isNew` versus the previous scan. The estimated migration gas is shown per position and never removes a candidate. Intended to run every 3 days. Present the findings and let the user decide; moving funds always goes through manage_evm_morpho_vault_position withdraw and supply with the user's explicit confirmation.",
+    parameters: {
+      type: "object",
+      properties: {
+        networks: {
+          type: "array",
+          items: { type: "string", enum: ["base", "ethereum"] },
+          description: "Networks to scan. Defaults to base and ethereum.",
+        },
+        min_tvl_usd: { type: "number", minimum: 0, description: "Minimum candidate vault TVL in USD. Defaults to 1000000." },
+        candidate_limit: { type: "integer", minimum: 1, maximum: 10, description: "Max candidates per position. Defaults to 3." },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "manage_evm_morpho_vault_position",
     description: "Preview, prepare, or execute a narrow Morpho vault operation on supported EVM mainnet networks. Supported operations are supply and withdraw. Preview or prepare first. After the user explicitly confirms the shown summary in chat, call execute; the OpenClaw plugin handles the internal execution authorization automatically.",
     optional: true,

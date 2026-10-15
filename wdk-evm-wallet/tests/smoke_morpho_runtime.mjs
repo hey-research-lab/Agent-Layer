@@ -1077,3 +1077,92 @@ test("morpho vault operations fall back to the V2 entity when the Morpho API is 
   assert.ok(calls.length > 0);
   assert.ok(calls.every((version) => version === "v2"));
 });
+
+test("morpho rebalance report shows candidates and never filters them by migration cost", async () => {
+  const service = createService();
+  const usdc = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+  const current = "0x00000000000000000000000000000000000000e1";
+  const better = "0x00000000000000000000000000000000000000e2";
+  const operations = [];
+
+  await withMockedFetch(async (url, options) => {
+    const body = JSON.parse(String(options?.body || "{}"));
+    if (String(url).startsWith("http://fake-rpc.local")) {
+      // A deliberately absurd gas price: the candidate must still be reported.
+      const result = body.method === "eth_gasPrice" ? "0x" + (10n ** 15n).toString(16) : "0x1";
+      return { ok: true, status: 200, async json() { return { jsonrpc: "2.0", id: body.id, result }; } };
+    }
+    operations.push(`${body.operationName}:${body.variables?.chainId ?? body.variables?.v1Where?.chainId_in?.[0]}`);
+    if (body.operationName === "MorphoUserByAddress" && body.variables.chainId === 1) {
+      return { ok: false, status: 503, async json() { return {}; }, async text() { return "unavailable"; } };
+    }
+    const data = {
+      MorphoUserByAddress: {
+        userByAddress: {
+          marketPositions: [],
+          vaultPositions: [
+            {
+              vault: {
+                address: current,
+                name: "Current",
+                asset: { address: usdc, symbol: "USDC" },
+                state: { netApy: 0.035, avgNetApy7d: 0.035, avgNetApy30d: 0.033 },
+              },
+              state: { shares: "1", assets: "1000000000", assetsUsd: 1000 },
+            },
+          ],
+          vaultV2Positions: [],
+        },
+      },
+      MorphoVaultList: {
+        v1: { items: [] },
+        v2: {
+          items: [
+            {
+              address: better,
+              name: "Better",
+              listed: true,
+              creationTimestamp: "1",
+              totalAssetsUsd: 20_000_000,
+              netApy: 0.05,
+              avgNetApy7d: 0.05,
+              avgNetApy30d: 0.049,
+              asset: { address: usdc, price: { usd: 1 } },
+              adapters: { items: [] },
+            },
+          ],
+        },
+      },
+      MorphoVaultByAddress: { v1: { items: [{ address: current, liquidity: { usd: 5000 }, state: {} }] }, v2: { items: [] } },
+      MorphoNativePrice: { assets: { items: [{ price: { usd: 2000 } }] } },
+    }[body.operationName];
+    return { ok: true, status: 200, async json() { return { data }; } };
+  }, async () => {
+    const report = await service.getMorphoRebalanceReport({ address: DEFAULT_ADDRESS });
+    assert.deepEqual(report.networks, ["base", "ethereum"]);
+    assert.equal(report.criteria.migrationCostFiltersCandidates, false);
+    assert.equal(report.positionCount, 1);
+    assert.equal(report.opportunityCount, 1);
+    const [base, ethereum] = report.networkReports;
+    assert.equal(base.error, null);
+    assert.match(ethereum.error, /503|unavailable|Morpho/i);
+    const [entry] = base.positions;
+    assert.equal(entry.current.vault.version, "v1");
+    assert.equal(entry.current.exitLiquidityCoversPosition, true);
+    assert.equal(entry.candidates.length, 1);
+    assert.equal(entry.candidates[0].vault.address, better);
+    const cost = entry.migrationCostEstimate;
+    assert.equal(cost.isEstimate, true);
+    assert.ok(cost.totalFeeUsd > entry.candidates[0].estimatedYearlyGainUsd);
+  });
+
+  assert.ok(operations.includes("MorphoNativePrice:8453"));
+});
+
+test("morpho rebalance report rejects networks outside Base and Ethereum", async () => {
+  const service = createService();
+  await assert.rejects(
+    () => service.getMorphoRebalanceReport({ address: DEFAULT_ADDRESS, networks: ["arc"] }),
+    /networks may only contain: base, ethereum/
+  );
+});

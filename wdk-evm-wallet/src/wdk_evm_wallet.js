@@ -1082,6 +1082,136 @@ const MORPHO_VAULT_SORT_KEYS = {
 // 1-wei positions in dozens of vaults. Positions below this USD value are hidden.
 const MORPHO_DUST_POSITION_USD = 1;
 
+// Rebalance report: the networks it watches by default, the TVL floor for a candidate
+// vault, and how many candidates it returns per position.
+const MORPHO_REBALANCE_DEFAULT_NETWORKS = ["base", "ethereum"];
+const MORPHO_REBALANCE_DEFAULT_MIN_TVL_USD = 1_000_000;
+const MORPHO_REBALANCE_DEFAULT_CANDIDATE_LIMIT = 3;
+const MORPHO_REBALANCE_CANDIDATE_SCAN_LIMIT = 100;
+const MORPHO_YOUNG_VAULT_SECONDS = 30 * 24 * 60 * 60;
+// Migration gas is an estimate shown to the user, never a filter. The withdraw leg is
+// quoted live; approve + deposit cannot be quoted before the funds are in the wallet,
+// so they use these rough defaults.
+const MORPHO_APPROVE_GAS_ESTIMATE = 60_000n;
+const MORPHO_DEPOSIT_GAS_ESTIMATE = 350_000n;
+const MORPHO_WITHDRAW_GAS_ESTIMATE = 350_000n;
+const WRAPPED_NATIVE_BY_CHAIN_ID = {
+  1: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+  8453: "0x4200000000000000000000000000000000000006",
+};
+const MORPHO_NATIVE_PRICE_QUERY = `
+  query MorphoNativePrice($address: String!, $chainId: Int!) {
+    assets(where: { address_in: [$address], chainId_in: [$chainId] }) {
+      items {
+        price {
+          usd
+        }
+      }
+    }
+  }
+`;
+
+function isFiniteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isMorphoYoungVault(vault, nowSeconds) {
+  const created = Number(vault?.creationTimestamp);
+  if (Number.isFinite(created) && created > 0 && nowSeconds - created < MORPHO_YOUNG_VAULT_SECONDS) {
+    return true;
+  }
+  return !isFiniteNumber(vault?.avgNetApy30d);
+}
+
+function hasMorphoRedWarning(vault) {
+  return (Array.isArray(vault?.warnings) ? vault.warnings : []).some(
+    (warning) => String(warning?.level || "").toUpperCase() === "RED"
+  );
+}
+
+function sameAddress(left, right) {
+  return Boolean(left) && Boolean(right) && String(left).toLowerCase() === String(right).toLowerCase();
+}
+
+// A V2 vault that allocates into the current vault (or the other way round) holds the same
+// underlying exposure, so moving between them is not a real alternative.
+function isMorphoWrapperPair(current, candidate) {
+  const wraps = (outer, inner) =>
+    (Array.isArray(outer?.underlyingVaults) ? outer.underlyingVaults : []).some((entry) =>
+      sameAddress(entry?.address, inner?.address)
+    );
+  return wraps(candidate, current) || wraps(current, candidate);
+}
+
+function morphoRewardShare(avgNetApy, avgNetApyExcludingRewards) {
+  if (!isFiniteNumber(avgNetApy) || !isFiniteNumber(avgNetApyExcludingRewards) || avgNetApy <= 0) {
+    return null;
+  }
+  return Math.max(0, (avgNetApy - avgNetApyExcludingRewards) / avgNetApy);
+}
+
+// Candidates must hold the same asset on the same chain, be listed, carry no RED warning,
+// clear the TVL floor and beat the current vault on the realized 7d average and, when both
+// have one, the 30d average. Migration cost is deliberately not part of the decision.
+function rankMorphoRebalanceCandidates({
+  position,
+  currentVault,
+  vaults,
+  minTvlUsd = MORPHO_REBALANCE_DEFAULT_MIN_TVL_USD,
+  candidateLimit = MORPHO_REBALANCE_DEFAULT_CANDIDATE_LIMIT,
+  nowSeconds = Math.floor(Date.now() / 1000),
+}) {
+  const current = { ...(currentVault || {}), ...(position?.vault || {}) };
+  const current7d = current.avgNetApy7d;
+  if (!isFiniteNumber(current7d)) {
+    return { candidates: [], skippedReason: "current_vault_has_no_7d_average" };
+  }
+  const assetAddress = position?.vault?.asset?.address;
+  const positionUsd = Number(position?.assetsUsd);
+  const candidates = [];
+  for (const vault of Array.isArray(vaults) ? vaults : []) {
+    if (sameAddress(vault?.address, current.address)) continue;
+    if (!sameAddress(vault?.asset?.address, assetAddress)) continue;
+    if (vault?.listed === false || hasMorphoRedWarning(vault)) continue;
+    if (!(Number(vault?.totalAssetsUsd) >= minTvlUsd)) continue;
+    if (isMorphoWrapperPair(current, vault)) continue;
+    if (!isFiniteNumber(vault?.avgNetApy7d) || vault.avgNetApy7d <= current7d) continue;
+    const hasBoth30d = isFiniteNumber(vault?.avgNetApy30d) && isFiniteNumber(current.avgNetApy30d);
+    if (hasBoth30d && vault.avgNetApy30d <= current.avgNetApy30d) continue;
+    const delta7d = vault.avgNetApy7d - current7d;
+    candidates.push({
+      vault: {
+        address: vault.address,
+        name: vault.name ?? null,
+        symbol: vault.symbol ?? null,
+        version: vault.version ?? null,
+        curators: Array.isArray(vault.curators) ? vault.curators : [],
+      },
+      netApy: vault.netApy ?? null,
+      avgNetApy7d: vault.avgNetApy7d,
+      avgNetApy30d: vault.avgNetApy30d ?? null,
+      avgNetApy7dExcludingRewards: vault.avgNetApy7dExcludingRewards ?? null,
+      rewardShare7d: morphoRewardShare(vault.avgNetApy7d, vault.avgNetApy7dExcludingRewards),
+      delta7d,
+      delta30d: hasBoth30d ? vault.avgNetApy30d - current.avgNetApy30d : null,
+      estimatedYearlyGainUsd: Number.isFinite(positionUsd) ? positionUsd * delta7d : null,
+      totalAssetsUsd: vault.totalAssetsUsd ?? null,
+      // How large the moved position would be relative to the candidate vault (informational).
+      positionShareOfTvl:
+        Number.isFinite(positionUsd) && Number(vault.totalAssetsUsd) > 0
+          ? positionUsd / (Number(vault.totalAssetsUsd) + positionUsd)
+          : null,
+      liquidityUsd: vault.liquidityUsd ?? null,
+      performanceFee: vault.performanceFee ?? null,
+      managementFee: vault.managementFee ?? null,
+      warnings: Array.isArray(vault.warnings) ? vault.warnings : [],
+      young: isMorphoYoungVault(vault, nowSeconds),
+    });
+  }
+  candidates.sort((left, right) => right.avgNetApy7d - left.avgNetApy7d);
+  return { candidates: candidates.slice(0, candidateLimit), skippedReason: null };
+}
+
 function normalizeMorphoAsset(asset) {
   if (!asset || typeof asset !== "object") {
     return asset ?? null;
@@ -1237,6 +1367,36 @@ function normalizeMorphoVaultPosition(position, version) {
 function isMorphoDustPosition(position) {
   const usd = Number(position?.assetsUsd);
   return Number.isFinite(usd) && usd < MORPHO_DUST_POSITION_USD;
+}
+
+function normalizeMorphoRebalanceNetworks(value) {
+  if (value === undefined || value === null || value === "") {
+    return [...MORPHO_REBALANCE_DEFAULT_NETWORKS];
+  }
+  const list = (Array.isArray(value) ? value : [value]).map((entry) => String(entry).trim().toLowerCase());
+  const unique = [...new Set(list.filter(Boolean))];
+  for (const network of unique) {
+    if (!MORPHO_REBALANCE_DEFAULT_NETWORKS.includes(network)) {
+      throw new Error(
+        `networks may only contain: ${MORPHO_REBALANCE_DEFAULT_NETWORKS.join(", ")}.`
+      );
+    }
+  }
+  if (unique.length === 0) {
+    throw new Error("networks must contain at least one network.");
+  }
+  return unique;
+}
+
+function normalizeMorphoCandidateLimit(value) {
+  if (value === undefined || value === null || value === "") {
+    return MORPHO_REBALANCE_DEFAULT_CANDIDATE_LIMIT;
+  }
+  const limit = assertNonNegativeInteger(value, "candidateLimit");
+  if (limit < 1 || limit > 10) {
+    throw new Error("candidateLimit must be between 1 and 10.");
+  }
+  return limit;
 }
 
 function normalizeMorphoSearch(value) {
@@ -2974,6 +3134,250 @@ export class WdkEvmWalletService {
         };
       }
     );
+  }
+
+  // Read-only scan: for each Morpho vault position on the watched networks, list better
+  // vaults for the same asset on the same chain, with an estimated migration cost shown
+  // alongside (never used to drop a candidate). No transaction is prepared here.
+  async getMorphoRebalanceReport({
+    seedPhrase,
+    address,
+    accountIndex = 0,
+    networks,
+    minTvlUsd,
+    candidateLimit,
+  }) {
+    const watched = normalizeMorphoRebalanceNetworks(networks);
+    const minTvl =
+      normalizeOptionalNonNegativeNumber(minTvlUsd, "minTvlUsd") ?? MORPHO_REBALANCE_DEFAULT_MIN_TVL_USD;
+    const limit = normalizeMorphoCandidateLimit(candidateLimit);
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const networkReports = [];
+    let reportAddress = address || null;
+    for (const network of watched) {
+      try {
+        const positions = await this.getMorphoPositions({ seedPhrase, address, accountIndex, network });
+        reportAddress = positions.address || reportAddress;
+        networkReports.push(
+          await this.#buildMorphoNetworkRebalanceReport({
+            seedPhrase,
+            address: positions.address,
+            accountIndex,
+            network,
+            positions,
+            minTvl,
+            limit,
+            nowSeconds,
+          })
+        );
+      } catch (error) {
+        networkReports.push({
+          network,
+          error: error instanceof Error ? error.message : String(error),
+          positions: [],
+        });
+      }
+    }
+    const positions = networkReports.flatMap((report) => report.positions);
+    return {
+      protocol: "morpho",
+      address: reportAddress,
+      scannedAt: new Date(nowSeconds * 1000).toISOString(),
+      networks: watched,
+      criteria: {
+        sameAssetSameChain: true,
+        listedOnly: true,
+        excludeRedWarnings: true,
+        minTvlUsd: minTvl,
+        mustBeat: ["avgNetApy7d", "avgNetApy30d"],
+        migrationCostFiltersCandidates: false,
+      },
+      positionCount: positions.length,
+      opportunityCount: positions.filter((position) => position.candidates.length > 0).length,
+      networkReports,
+      source: "morpho-api",
+    };
+  }
+
+  async #buildMorphoNetworkRebalanceReport({
+    seedPhrase,
+    address,
+    accountIndex,
+    network,
+    positions,
+    minTvl,
+    limit,
+    nowSeconds,
+  }) {
+    const runtimeConfig = this.#resolveRuntimeConfig(network);
+    const vaultPositions = Array.isArray(positions.vaultPositions) ? positions.vaultPositions : [];
+    if (vaultPositions.length === 0) {
+      return { network, chainId: runtimeConfig.chainId, error: null, positions: [] };
+    }
+    const vaultsByAsset = new Map();
+    for (const position of vaultPositions) {
+      const asset = String(position?.vault?.asset?.address || "").toLowerCase();
+      if (!asset || vaultsByAsset.has(asset)) continue;
+      const listing = await this.getMorphoVaults({
+        network,
+        assetAddress: position.vault.asset.address,
+        minTotalAssetsUsd: minTvl,
+        limit: MORPHO_REBALANCE_CANDIDATE_SCAN_LIMIT,
+      });
+      vaultsByAsset.set(asset, listing.vaults);
+    }
+    const gasPriceWei = await this.#readGasPriceWei(runtimeConfig);
+    const nativeUsd = await this.#getMorphoNativeUsdPrice(runtimeConfig);
+    const reports = [];
+    for (const position of vaultPositions) {
+      const lookup = await this.getMorphoVaults({ network, vaultAddress: position.vault.address }).catch(
+        () => null
+      );
+      const currentVault = lookup?.vault || null;
+      const { candidates, skippedReason } = rankMorphoRebalanceCandidates({
+        position,
+        currentVault,
+        vaults: vaultsByAsset.get(String(position.vault.asset?.address || "").toLowerCase()) || [],
+        minTvlUsd: minTvl,
+        candidateLimit: limit,
+        nowSeconds,
+      });
+      const migrationCost =
+        candidates.length > 0
+          ? await this.#estimateMorphoMigrationCost({
+              seedPhrase,
+              address,
+              accountIndex,
+              network,
+              position,
+              gasPriceWei,
+              nativeUsd,
+            })
+          : null;
+      const positionUsd = Number(position.assetsUsd);
+      const liquidityUsd = Number(currentVault?.liquidityUsd);
+      reports.push({
+        network,
+        chainId: runtimeConfig.chainId,
+        current: {
+          vault: {
+            address: position.vault.address,
+            name: position.vault.name ?? null,
+            symbol: position.vault.symbol ?? null,
+            version: position.version,
+            curators: currentVault?.curators ?? [],
+          },
+          asset: position.vault.asset ?? null,
+          assets: position.assets,
+          assetsUsd: position.assetsUsd,
+          netApy: position.vault.netApy,
+          avgNetApy7d: position.vault.avgNetApy7d,
+          avgNetApy30d: position.vault.avgNetApy30d,
+          avgNetApy7dExcludingRewards: position.vault.avgNetApy7dExcludingRewards,
+          rewardShare7d: morphoRewardShare(
+            position.vault.avgNetApy7d,
+            position.vault.avgNetApy7dExcludingRewards
+          ),
+          liquidityUsd: Number.isFinite(liquidityUsd) ? liquidityUsd : null,
+          exitLiquidityCoversPosition:
+            Number.isFinite(liquidityUsd) && Number.isFinite(positionUsd) ? liquidityUsd >= positionUsd : null,
+          warnings: currentVault?.warnings ?? [],
+        },
+        candidates,
+        skippedReason,
+        migrationCostEstimate: migrationCost,
+      });
+    }
+    return { network, chainId: runtimeConfig.chainId, error: null, positions: reports };
+  }
+
+  async #readGasPriceWei(runtimeConfig) {
+    try {
+      return BigInt(await rpcRequest(runtimeConfig.providerUrl, "eth_gasPrice", []));
+    } catch {
+      return null;
+    }
+  }
+
+  async #getMorphoNativeUsdPrice(runtimeConfig) {
+    const wrapped = WRAPPED_NATIVE_BY_CHAIN_ID[runtimeConfig.chainId];
+    if (!wrapped) {
+      return null;
+    }
+    const cacheKey = JSON.stringify(["native-price", runtimeConfig.chainId]);
+    const cached = morphoDiscoveryCacheGet(cacheKey);
+    if (cached) {
+      return cached.usd;
+    }
+    try {
+      const data = await this.#morphoGraphqlRequest({
+        query: MORPHO_NATIVE_PRICE_QUERY,
+        variables: { address: wrapped, chainId: runtimeConfig.chainId },
+        operationName: "MorphoNativePrice",
+      });
+      const usd = Number(data?.assets?.items?.[0]?.price?.usd);
+      const value = Number.isFinite(usd) ? usd : null;
+      morphoDiscoveryCacheSet(cacheKey, { usd: value });
+      return value;
+    } catch {
+      return null;
+    }
+  }
+
+  // withdraw (quoted live when possible) + approve + deposit (defaults). Shown only.
+  async #estimateMorphoMigrationCost({
+    seedPhrase,
+    address,
+    accountIndex,
+    network,
+    position,
+    gasPriceWei,
+    nativeUsd,
+  }) {
+    let withdrawFeeWei = null;
+    try {
+      const quote = await this.quoteMorphoVaultOperation({
+        seedPhrase,
+        address,
+        accountIndex,
+        network,
+        operation: "withdraw",
+        vaultAddress: position.vault.address,
+        tokenAddress: position.vault.asset?.address,
+        amount: String(position.assets),
+      });
+      if (quote?.estimatedOperationFeeWei) {
+        withdrawFeeWei = BigInt(quote.estimatedOperationFeeWei);
+      }
+    } catch {
+      withdrawFeeWei = null;
+    }
+    if (gasPriceWei === null && withdrawFeeWei === null) {
+      return { available: false, reason: "gas_price_unavailable" };
+    }
+    const withdrawSource = withdrawFeeWei !== null ? "quote" : "default";
+    const withdrawWei =
+      withdrawFeeWei !== null ? withdrawFeeWei : MORPHO_WITHDRAW_GAS_ESTIMATE * gasPriceWei;
+    const depositWei =
+      gasPriceWei !== null ? (MORPHO_APPROVE_GAS_ESTIMATE + MORPHO_DEPOSIT_GAS_ESTIMATE) * gasPriceWei : null;
+    const totalWei = depositWei !== null ? withdrawWei + depositWei : null;
+    const toUsd = (wei) =>
+      wei !== null && isFiniteNumber(nativeUsd) ? (Number(wei) / 1e18) * nativeUsd : null;
+    return {
+      available: totalWei !== null,
+      isEstimate: true,
+      gasPriceWei: gasPriceWei !== null ? gasPriceWei.toString() : null,
+      nativeUsd,
+      withdraw: { feeWei: withdrawWei.toString(), source: withdrawSource },
+      approveAndDeposit: {
+        feeWei: depositWei !== null ? depositWei.toString() : null,
+        gasUnits: (MORPHO_APPROVE_GAS_ESTIMATE + MORPHO_DEPOSIT_GAS_ESTIMATE).toString(),
+        source: "default",
+      },
+      totalFeeWei: totalWei !== null ? totalWei.toString() : null,
+      totalFeeUsd: toUsd(totalWei),
+      note: "Estimate at scan time; the preview before each step re-quotes gas.",
+    };
   }
 
   async quoteMorphoVaultOperation({
@@ -9627,4 +10031,5 @@ export const __testables = {
   confirmTransaction,
   resolveTransactionStatus,
   setRpcRequestForTests,
+  rankMorphoRebalanceCandidates,
 };

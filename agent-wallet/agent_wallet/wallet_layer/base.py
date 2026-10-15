@@ -130,6 +130,15 @@ class AgentWalletBackend(ABC):
     async def get_evm_morpho_positions(self) -> dict[str, Any]:
         raise WalletBackendError(f"{self.name} does not support EVM Morpho positions lookup.")
 
+    async def get_morpho_rebalance_report(
+        self,
+        *,
+        networks: list[str] | None = None,
+        min_tvl_usd: float | int | None = None,
+        candidate_limit: int | None = None,
+    ) -> dict[str, Any]:
+        raise WalletBackendError(f"{self.name} does not support the Morpho rebalance report.")
+
     async def preview_evm_aave_operation(
         self,
         *,

@@ -1644,7 +1644,7 @@ const evmToolDefinitions = [
   },
   {
     name: "get_evm_morpho_vaults",
-    description: "Get read-only Morpho vault discovery and detail data for the configured EVM network on supported mainnet chains. When listing, results are ordered (default: largest TVL first) and can be filtered by underlying asset.",
+    description: "Get read-only Morpho vault discovery and detail data for the configured EVM network on supported mainnet chains. Covers both V1 (MetaMorpho) and V2 vaults in one list; each vault carries `version` (v1/v2). When listing, results are ordered (default: largest TVL first) and can be filtered by underlying asset. Rates are fractions: `netApy` is the current net rate, `avgNetApy7d` / `avgNetApy30d` are realized averages net of vault fees (with rewards), and `avgNetApy7dExcludingRewards` strips rewards.",
     parameters: {
       type: "object",
       properties: {
@@ -1688,11 +1688,28 @@ const evmToolDefinitions = [
   },
   {
     name: "get_evm_morpho_positions",
-    description: "Get read-only Morpho vault and market positions for the configured EVM wallet on supported mainnet chains.",
+    description: "Get read-only Morpho vault and market positions for the configured EVM wallet on supported mainnet chains. Vault positions cover V1 (MetaMorpho) and V2 vaults (`version`), each with the vault's current `netApy` and 7-day / 30-day realized averages (`avgNetApy7d`, `avgNetApy30d`). Dust positions under $1 (dead-share seed deposits) are hidden and counted in `hidden_dust_vault_position_count`.",
     parameters: {
       type: "object",
       properties: {
         network: { type: "string", enum: ["ethereum", "base"] },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_morpho_rebalance_report",
+    description: "Read-only scan of the wallet's Morpho vault positions (V1 and V2) on Base and Ethereum for better vaults holding the same asset on the same chain. A candidate must be listed, carry no red warning, clear the TVL floor and beat the current vault on both the realized 7-day and 30-day net APY averages. Each candidate shows current and average rates, reward share, TVL, the position's share of that TVL, warnings, a young-vault flag and `isNew` versus the previous scan. The estimated migration gas is shown per position and never removes a candidate. Intended to run every 3 days. Present the findings and let the user decide; moving funds always goes through manage_evm_morpho_vault_position withdraw and supply with the user's explicit confirmation.",
+    parameters: {
+      type: "object",
+      properties: {
+        networks: {
+          type: "array",
+          items: { type: "string", enum: ["base", "ethereum"] },
+          description: "Networks to scan. Defaults to base and ethereum.",
+        },
+        min_tvl_usd: { type: "number", minimum: 0, description: "Minimum candidate vault TVL in USD. Defaults to 1000000." },
+        candidate_limit: { type: "integer", minimum: 1, maximum: 10, description: "Max candidates per position. Defaults to 3." },
       },
       additionalProperties: false,
     },

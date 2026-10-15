@@ -21,7 +21,8 @@
     "test:network-state": "node --test tests/unit_network_state.mjs",
     "test:wallet-network": "node --test tests/unit_wdk_wallet_network.mjs",
     "test:socket-transport": "node --test tests/unit_socket_transport.mjs",
-    "test:imd": "node --test tests/unit_imd.mjs"
+    "test:imd": "node --test tests/unit_imd.mjs",
+    "test:morpho-rebalance": "node --test tests/unit_morpho_rebalance.mjs"
   },
   "dependencies": {
     "@morpho-org/morpho-sdk": "^3.2.0",

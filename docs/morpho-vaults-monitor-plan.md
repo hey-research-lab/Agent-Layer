@@ -47,13 +47,14 @@ Status: in progress (branch `morpho-vaults-v1-apy`), started 2026-10-15.
 
 ## Stage B — rebalance monitor (after A ships)
 
-1. `get_morpho_rebalance_report` (read-only): positions on Base+Ethereum → candidates with the
+1. ✅ `get_morpho_rebalance_report` (read-only): positions on Base+Ethereum → candidates with the
    same asset on the same chain → table with spot / 7d / 30d, reward share, TVL, exit liquidity,
    warnings, estimated migration gas. Hard filters: same asset+chain, listed, no red warnings,
    min TVL (configurable). Candidate must beat the current vault on both 7d and 30d.
    Young vaults (<30d history) flagged.
-2. State under `OPENCLAW_HOME/defi_monitor/`: last run, report, notification dedupe, config.
-3. Due-check: wallet responses carry `monitor_due` when the last scan is >3 days old (works on
-   every host); optional native scheduling per host.
+2. ✅ State under `OPENCLAW_HOME/defi_monitor/morpho_rebalance.json`: last scan per address and the
+   moves it returned; candidates carry `isNew`. Failed networks keep their known moves.
+3. ½ Due-check: `get_evm_morpho_positions` carries `rebalance_monitor.scan_due` (>3 days since the
+   last scan). Native scheduling per host: pending.
 4. Rebalance intent: withdraw → verify → deposit, one confirmation bound to stable params;
    gas re-quoted at preview time. A failed deposit leaves funds in the wallet and is reported.

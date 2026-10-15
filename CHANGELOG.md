@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **New `get_morpho_rebalance_report` tool: a read-only scan for better Morpho
+  vaults.** For each Morpho vault position (V1 and V2) on Base and Ethereum it
+  lists vaults holding the same asset on the same chain that are listed, carry
+  no red warning, clear a TVL floor (default $1M) and beat the current vault on
+  both the 7-day and 30-day realized net APY. Each candidate shows the rate
+  difference, reward share, TVL and the position's share of it, warnings and a
+  young-vault flag. The estimated migration gas is shown and never removes a
+  candidate. The wallet remembers each scan per address, marks repeat
+  recommendations as already seen, and `get_evm_morpho_positions` reports when
+  the next scan (every 3 days) is due. Moving funds still goes through the
+  existing withdraw and supply previews and confirmations.
 - **Morpho vault tools keep working after Morpho removes `Asset.priceUsd`
   (2026-10-21).** Every Morpho query now reads `price { usd }`; responses still
   expose `priceUsd`, so callers see no change.

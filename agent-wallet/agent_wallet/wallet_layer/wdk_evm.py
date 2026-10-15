@@ -1206,6 +1206,39 @@ class WdkEvmLocalWalletBackend(AgentWalletBackend):
             "source": "wdk-evm-wallet",
         }
 
+    async def get_morpho_rebalance_report(
+        self,
+        *,
+        networks: list[str] | None = None,
+        min_tvl_usd: float | int | None = None,
+        candidate_limit: int | None = None,
+    ) -> dict[str, Any]:
+        resolved_address = await self.get_address()
+        payload: dict[str, Any] = {
+            "walletId": self.wallet_id,
+            "address": resolved_address,
+            "accountIndex": self.account_index,
+        }
+        if networks:
+            payload["networks"] = [str(network).strip().lower() for network in networks]
+        if min_tvl_usd is not None:
+            payload["minTvlUsd"] = min_tvl_usd
+        if candidate_limit is not None:
+            payload["candidateLimit"] = int(candidate_limit)
+        data = await self.client.post("/v1/evm/morpho/rebalance-report/get", payload)
+        return {
+            "chain": self.chain,
+            "protocol": str(data.get("protocol") or "morpho"),
+            "address": str(data.get("address") or resolved_address or ""),
+            "scanned_at": data.get("scannedAt"),
+            "networks": list(data.get("networks") or []),
+            "criteria": dict(data.get("criteria") or {}),
+            "position_count": int(data.get("positionCount") or 0),
+            "opportunity_count": int(data.get("opportunityCount") or 0),
+            "network_reports": list(data.get("networkReports") or []),
+            "source": "wdk-evm-wallet",
+        }
+
     async def preview_evm_aave_operation(
         self,
         *,

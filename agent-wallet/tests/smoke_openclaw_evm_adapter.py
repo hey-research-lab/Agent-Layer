@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -892,6 +894,43 @@ class FakeEvmBackend(AgentWalletBackend):
             "source": "fake",
         }
 
+    async def get_morpho_rebalance_report(
+        self,
+        *,
+        networks: list[str] | None = None,
+        min_tvl_usd: float | int | None = None,
+        candidate_limit: int | None = None,
+    ) -> dict:
+        self.morpho_rebalance_calls = getattr(self, "morpho_rebalance_calls", [])
+        self.morpho_rebalance_calls.append(
+            {"networks": networks, "min_tvl_usd": min_tvl_usd, "candidate_limit": candidate_limit}
+        )
+        return {
+            "chain": "evm",
+            "protocol": "morpho",
+            "address": await self.get_address(),
+            "scanned_at": "2026-10-15T12:00:00.000Z",
+            "networks": networks or ["base", "ethereum"],
+            "criteria": {"migrationCostFiltersCandidates": False},
+            "position_count": 1,
+            "opportunity_count": 1,
+            "network_reports": [
+                {
+                    "network": "base",
+                    "chainId": 8453,
+                    "error": None,
+                    "positions": [
+                        {
+                            "chainId": 8453,
+                            "current": {"vault": {"address": "0xvault"}},
+                            "candidates": [{"vault": {"address": "0xbetter"}}],
+                        }
+                    ],
+                }
+            ],
+            "source": "fake",
+        }
+
     async def get_evm_morpho_positions(self) -> dict:
         return {
             "chain": "evm",
@@ -1688,6 +1727,7 @@ async def _main() -> None:
     assert "get_evm_morpho_vaults" in tool_names
     assert "get_evm_morpho_markets" in tool_names
     assert "get_evm_morpho_positions" in tool_names
+    assert "get_morpho_rebalance_report" in tool_names
     assert "manage_evm_morpho_vault_position" in tool_names
     assert "manage_evm_morpho_market_position" in tool_names
     assert "get_evm_lido_overview" in tool_names
@@ -2124,10 +2164,35 @@ async def _main() -> None:
         "0x2222222222222222222222222222222222222222"
     ]
 
-    morpho_positions = await adapter.invoke("get_evm_morpho_positions", {"network": "base"})
-    assert morpho_positions.ok is True
-    assert morpho_positions.data["vault_position_count"] == 1
-    assert morpho_positions.data["market_position_count"] == 1
+    previous_openclaw_home = os.environ.get("OPENCLAW_HOME")
+    with tempfile.TemporaryDirectory() as monitor_home:
+        os.environ["OPENCLAW_HOME"] = monitor_home
+        try:
+            morpho_positions = await adapter.invoke("get_evm_morpho_positions", {"network": "base"})
+            assert morpho_positions.ok is True
+            assert morpho_positions.data["vault_position_count"] == 1
+            assert morpho_positions.data["market_position_count"] == 1
+            assert morpho_positions.data["rebalance_monitor"]["scan_due"] is True
+            assert morpho_positions.data["rebalance_monitor"]["tool"] == "get_morpho_rebalance_report"
+
+            rebalance = await adapter.invoke(
+                "get_morpho_rebalance_report", {"networks": ["base"], "min_tvl_usd": 2_000_000}
+            )
+            assert rebalance.ok is True
+            assert rebalance.data["monitor"]["new_opportunity_count"] == 1
+            candidate = rebalance.data["network_reports"][0]["positions"][0]["candidates"][0]
+            assert candidate["isNew"] is True
+            rebalance_again = await adapter.invoke("get_morpho_rebalance_report", {})
+            assert rebalance_again.data["monitor"]["new_opportunity_count"] == 0
+
+            morpho_positions = await adapter.invoke("get_evm_morpho_positions", {"network": "base"})
+            assert morpho_positions.data["rebalance_monitor"]["scan_due"] is False
+            assert (Path(monitor_home) / "defi_monitor" / "morpho_rebalance.json").exists()
+        finally:
+            if previous_openclaw_home is None:
+                os.environ.pop("OPENCLAW_HOME", None)
+            else:
+                os.environ["OPENCLAW_HOME"] = previous_openclaw_home
 
     morpho_vault_preview = await adapter.invoke(
         "manage_evm_morpho_vault_position",

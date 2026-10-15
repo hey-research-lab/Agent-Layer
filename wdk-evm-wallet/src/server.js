@@ -494,6 +494,12 @@ export async function startServer(config = loadConfig()) {
         return sendJson(response, 200, { ok: true, data });
       }
 
+      if (method === "POST" && url.pathname === "/v1/evm/morpho/rebalance-report/get") {
+        const body = await withResolvedSeedOrAddress(await readJsonBody(request));
+        const data = await service.getMorphoRebalanceReport(body);
+        return sendJson(response, 200, { ok: true, data });
+      }
+
       const morphoVaultOperationMatch = url.pathname.match(
         /^\/v1\/evm\/morpho\/vault\/(supply|withdraw)\/(quote|send)$/
       );

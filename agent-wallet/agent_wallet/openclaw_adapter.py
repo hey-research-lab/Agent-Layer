@@ -7,6 +7,7 @@ import json
 import time
 from typing import Any
 
+from agent_wallet import morpho_monitor
 from agent_wallet.approval import inspect_approval_token, verify_approval_token
 from agent_wallet.autonomous_policy import OperationRequest
 from agent_wallet.exceptions import ProviderError
@@ -2476,6 +2477,46 @@ class OpenClawWalletAdapter:
                         risk_level="low",
                     ),
                 )
+                tools.insert(
+                    18,
+                    AgentToolSpec(
+                        name="get_morpho_rebalance_report",
+                        description=(
+                            "Read-only scan of the wallet's Morpho vault positions (V1 and V2) on Base and Ethereum for "
+                            "better vaults holding the same asset on the same chain. A candidate must be listed, carry no "
+                            "red warning, clear the TVL floor and beat the current vault on both the realized 7-day and "
+                            "30-day net APY averages. Each candidate shows current and average rates, reward share, TVL, "
+                            "the position's share of that TVL, warnings, a young-vault flag and `isNew` versus the previous "
+                            "scan. The estimated migration gas is shown per position and never removes a candidate. "
+                            "Intended to run every 3 days. Present the findings and let the user decide; moving funds "
+                            "always goes through manage_evm_morpho_vault_position withdraw and supply with the user's "
+                            "explicit confirmation."
+                        ),
+                        input_schema={
+                            "type": "object",
+                            "properties": {
+                                "networks": {
+                                    "type": "array",
+                                    "items": {"type": "string", "enum": ["base", "ethereum"]},
+                                    "description": "Networks to scan. Defaults to base and ethereum.",
+                                },
+                                "min_tvl_usd": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "Minimum candidate vault TVL in USD. Defaults to 1000000.",
+                                },
+                                "candidate_limit": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 10,
+                                    "description": "Max candidates per position. Defaults to 3.",
+                                },
+                            },
+                            "additionalProperties": False,
+                        },
+                        read_only=True,
+                        risk_level="low",
+                    ),                )
                 tools.insert(
                     18,
                     AgentToolSpec(
@@ -5259,6 +5300,25 @@ class OpenClawWalletAdapter:
 
             if tool_name == "get_evm_morpho_positions":
                 data = await active_backend.get_evm_morpho_positions()
+                if data.get("vault_position_count"):
+                    data["rebalance_monitor"] = {
+                        **morpho_monitor.scan_status(data.get("address")),
+                        "tool": "get_morpho_rebalance_report",
+                    }
+                return AgentToolResult(tool=tool_name, ok=True, data=data)
+
+            if tool_name == "get_morpho_rebalance_report":
+                data = await active_backend.get_morpho_rebalance_report(
+                    networks=args.get("networks"),
+                    min_tvl_usd=args.get("min_tvl_usd"),
+                    candidate_limit=args.get("candidate_limit"),
+                )
+                data["monitor"] = morpho_monitor.record_report(
+                    {
+                        "address": data.get("address"),
+                        "networkReports": data.get("network_reports"),
+                    }
+                )
                 return AgentToolResult(tool=tool_name, ok=True, data=data)
 
             if tool_name == "manage_evm_morpho_vault_position":
