@@ -1,9 +1,10 @@
 """Focused checks for EVM activity grouping and pagination."""
 
 import asyncio
+import tempfile
 from unittest.mock import patch
 
-from agent_wallet.providers.evm_activity import get_activity
+from agent_wallet.providers.evm_activity import get_activity, record_submitted_transaction
 
 
 ADDRESS = "0x" + "1" * 40
@@ -35,6 +36,12 @@ async def main() -> None:
         assert result["next_incoming_page_key"] == "__end__"
         await get_activity("base", ADDRESS, outgoing_page_key="older", incoming_page_key="__end__")
         assert calls[-1] == ("incoming", "__end__")
+        with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", {"OPENCLAW_HOME": directory}):
+            pending_hash = "0x" + "b" * 64
+            record_submitted_transaction("base", ADDRESS, pending_hash)
+            pending_result = await get_activity("base", ADDRESS)
+            assert pending_result["transactions"][0]["hash"] == pending_hash
+            assert pending_result["transactions"][0]["status"] == "submitted"
 
 
 if __name__ == "__main__":

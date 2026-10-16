@@ -4796,6 +4796,21 @@ class OpenClawWalletAdapter:
         result = await self._invoke_tool_dispatch(tool_name, arguments)
         data = result.data
         if (
+            result.ok and isinstance(data, dict) and not self._is_read_only_tool(tool_name)
+        ):
+            tx_hash = data.get("tx_hash") or data.get("hash")
+            if isinstance(tx_hash, str):
+                try:
+                    from agent_wallet.providers.evm_activity import record_submitted_transaction
+
+                    backend = self._resolve_backend_for_args(arguments or {})
+                    if getattr(backend, "name", None) == "wdk_evm_local":
+                        address = await backend.get_address()
+                        if address:
+                            record_submitted_transaction(str(backend.network), address, tx_hash)
+                except Exception:
+                    pass  # A cache write must never turn a submitted payment into an error.
+        if (
             result.ok
             and isinstance(data, dict)
             and data.get("confirmation_status") in ("submitted", "unknown")

@@ -3,16 +3,56 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import re
+import tempfile
 import time
+from pathlib import Path
 from typing import Any
 
-from agent_wallet.config import settings
+from agent_wallet.config import settings, resolve_openclaw_home
 from agent_wallet.exceptions import ProviderError
 from agent_wallet.http_client import get_client
 
 _CACHE: dict[tuple[str, str, str, str, int], tuple[float, dict[str, Any]]] = {}
 _CACHE_TTL = 30.0
+
+
+def _pending_path(network: str, address: str) -> Path:
+    return resolve_openclaw_home() / "cache" / "evm-activity" / f"{network}-{address.lower()}.json"
+
+
+def _read_pending(network: str, address: str) -> list[dict[str, Any]]:
+    path = _pending_path(network, address)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    cutoff = time.time() - 86400
+    return [item for item in data if isinstance(item, dict) and item.get("recorded_at", 0) >= cutoff][:100]
+
+
+def record_submitted_transaction(network: str, address: str, tx_hash: str) -> None:
+    """Keep a local placeholder until Alchemy indexes a wallet-submitted tx."""
+    if network not in {"ethereum", "base", "robinhood"}:
+        return
+    if not re.fullmatch(r"0x[a-fA-F0-9]{40}", address) or not re.fullmatch(r"0x[a-fA-F0-9]{64}", tx_hash):
+        return
+    path = _pending_path(network, address)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    entries = [item for item in _read_pending(network, address) if item.get("hash", "").lower() != tx_hash.lower()]
+    entries.insert(0, {"hash": tx_hash, "recorded_at": time.time()})
+    fd, temp_name = tempfile.mkstemp(prefix=".activity-", dir=path.parent)
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(entries[:100], stream, separators=(",", ":"))
+        os.replace(temp_path, path)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 async def _fetch_page(
@@ -92,6 +132,13 @@ async def get_activity(
     transactions = sorted(
         by_hash.values(), key=lambda item: str(item.get("timestamp") or ""), reverse=True
     )
+    for pending in reversed(_read_pending(network, address)):
+        tx_hash = pending.get("hash", "")
+        if tx_hash.lower() not in by_hash:
+            transactions.insert(0, {
+                "hash": tx_hash, "network": network, "status": "submitted",
+                "timestamp": None, "transfers": [],
+            })
     return {
         "network": network,
         "address": address,

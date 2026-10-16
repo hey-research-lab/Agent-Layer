@@ -17,8 +17,10 @@ Ethereum, Base, or Robinhood Chain. It fetches one incoming and one outgoing
 Alchemy transfer page through `provider-gateway` and groups events by transaction
 hash. Pass the returned `next_outgoing_page_key` and `next_incoming_page_key`
 to load older pages; `__end__` marks an exhausted direction. A bounded, 30-second
-process-local cache avoids repeated provider reads. No transaction history is
-persisted on the gateway or in the wallet vault. This feed covers transfers,
+process-local cache avoids repeated provider reads. Successful wallet submissions
+are recorded locally under `OPENCLAW_HOME/cache/evm-activity` as short-lived hash
+placeholders until Alchemy indexes them. The gateway and wallet vault persist no
+transaction history. This feed covers transfers,
 not failed transactions or contract calls without an asset movement.
 
 ## OpenClaw integration
