@@ -58,7 +58,6 @@ class Settings(BaseSettings):
     kamino_api_base_url: str = "https://api.kamino.finance"
     kamino_program_id: str = "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
     alchemy_api_key: str = ""
-    helius_api_key: str = ""
 
     http_timeout: float = 10.0
 
@@ -149,8 +148,8 @@ def _normalize_rpc_provider(value: str | None) -> str:
     provider = (value or "").strip().lower()
     if not provider:
         return "auto"
-    if provider not in {"auto", "shared", "helius", "alchemy"}:
-        return "auto"
+    if provider not in {"auto", "alchemy"}:
+        raise ValueError("Solana gateway provider must be auto or alchemy; remove legacy shared/helius selection.")
     return provider
 
 
@@ -236,13 +235,9 @@ def resolve_solana_rpc_urls(
         if value and value not in candidates:
             candidates.append(value)
 
-    primary = resolve_solana_rpc_url(normalized_network, configured)
+    primary = configured.strip()
     if primary and primary not in candidates:
         candidates.insert(0, primary)
-
-    official = resolve_solana_rpc_url(normalized_network, "")
-    if official and official not in candidates:
-        candidates.append(official)
 
     return candidates
 
@@ -261,18 +256,15 @@ def resolve_runtime_solana_rpc_config(
 
     Preference order:
     1. explicit direct RPC env/config
-    2. user-provided provider API keys
+    2. user-provided Alchemy API key
     3. shared proxy gateway
-    4. public official fallback
+    4. explicitly configured plugin RPC URLs
     """
     normalized_network = normalize_solana_network(network)
     mode = _normalize_provider_mode(
         os.getenv("SOLANA_RPC_PROVIDER_MODE", settings.solana_rpc_provider_mode)
     )
     gateway_url = os.getenv("PROVIDER_GATEWAY_URL", settings.provider_gateway_url).strip()
-    gateway_provider = _normalize_rpc_provider(
-        os.getenv("PROVIDER_GATEWAY_RPC_PROVIDER", settings.provider_gateway_rpc_provider)
-    )
 
     env_primary = os.getenv("SOLANA_RPC_URL", "").strip()
     env_list = os.getenv("SOLANA_RPC_URLS", "").strip()
@@ -284,10 +276,7 @@ def resolve_runtime_solana_rpc_config(
             "rpc_urls": resolve_solana_rpc_urls(normalized_network, env_primary, env_list),
         }
     if env_list:
-        official = resolve_solana_rpc_url(normalized_network, "")
         candidates = [item.strip() for item in env_list.split(",") if item.strip()]
-        if official and official not in candidates:
-            candidates.append(official)
         return {
             "mode": "user_direct",
             "provider": "custom",
@@ -306,33 +295,14 @@ def resolve_runtime_solana_rpc_config(
                 "mode": "user_direct",
                 "provider": "alchemy",
                 "transport": "direct",
-                "rpc_urls": resolve_solana_rpc_urls(
-                    normalized_network,
-                    f"{alchemy_base}/{alchemy_key}",
-                    "",
-                ),
-            }
-
-    helius_key = os.getenv("HELIUS_API_KEY", settings.helius_api_key).strip()
-    if helius_key:
-        helius_base_by_network = {
-            "mainnet": "https://mainnet.helius-rpc.com/",
-        }
-        helius_base = helius_base_by_network.get(normalized_network)
-        if helius_base:
-            return {
-                "mode": "user_direct",
-                "provider": "helius",
-                "transport": "direct",
-                "rpc_urls": resolve_solana_rpc_urls(
-                    normalized_network,
-                    f"{helius_base}?api-key={helius_key}",
-                    "",
-                ),
+                "rpc_urls": [f"{alchemy_base}/{alchemy_key}"],
             }
 
     if normalized_network == "mainnet" and (mode == "shared_proxy" or (mode == "auto" and gateway_url)):
         if gateway_url:
+            gateway_provider = _normalize_rpc_provider(
+                os.getenv("PROVIDER_GATEWAY_RPC_PROVIDER", settings.provider_gateway_rpc_provider)
+            )
             return {
                 "mode": "shared_proxy",
                 "provider": gateway_provider,
@@ -346,12 +316,15 @@ def resolve_runtime_solana_rpc_config(
                 ],
             }
 
-    return {
-        "mode": "public_fallback",
-        "provider": "official",
-        "transport": "direct",
-        "rpc_urls": resolve_solana_rpc_urls(normalized_network, configured, configured_list),
-    }
+    configured_urls = resolve_solana_rpc_urls(normalized_network, configured, configured_list)
+    if configured_urls:
+        return {
+            "mode": "user_direct",
+            "provider": "custom",
+            "transport": "direct",
+            "rpc_urls": configured_urls,
+        }
+    raise ValueError("Solana RPC is not configured. Set ALCHEMY_API_KEY or PROVIDER_GATEWAY_URL.")
 
 
 def resolve_runtime_solana_rpc_urls(

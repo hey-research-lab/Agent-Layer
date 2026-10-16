@@ -11,7 +11,6 @@ from types import SimpleNamespace
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from agent_wallet.config import normalize_solana_network, resolve_solana_rpc_url
 from agent_wallet.exceptions import ProviderError
 from agent_wallet.http_client import get_client
 from agent_wallet.wallet_layer.base import AgentWalletBackend
@@ -76,9 +75,7 @@ def _backend_solana_sdk_rpc_url(backend: AgentWalletBackend) -> str | None:
     primary = _trim(getattr(backend, "rpc_url", None))
     if primary.startswith(("http://", "https://")):
         return primary
-    network = _backend_network(backend)
-    fallback = resolve_solana_rpc_url(normalize_solana_network(network or "mainnet"), "")
-    return _trim(fallback) or None
+    return None
 
 
 def _trim(value: Any) -> str:
@@ -1151,7 +1148,7 @@ async def _create_payment_headers(
         if not sdk_rpc_url:
             raise ProviderError(
                 "x402-solana",
-                "No direct Solana RPC URL is available for the x402 SDK signer path.",
+                "Solana x402 signing requires a direct RPC URL. Configure ALCHEMY_API_KEY or SOLANA_RPC_URL.",
                 details={"network": _backend_network(backend)},
             )
         solana_signer = _build_solana_sdk_signer(backend)
@@ -1169,9 +1166,8 @@ async def _create_payment_headers(
                 "Failed to build the Solana x402 payment payload.",
                 details={
                     "network": _backend_network(backend),
-                    "sdk_rpc_url": sdk_rpc_url,
+                    "sdk_rpc_host": urlsplit(sdk_rpc_url).hostname,
                     "error_type": type(exc).__name__,
-                    "error": str(exc) or None,
                 },
             ) from exc
         headers = sdk["x402HTTPClientBase"]().encode_payment_signature_header(payment_payload)

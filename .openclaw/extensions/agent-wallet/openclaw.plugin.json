@@ -128,18 +128,11 @@
       },
       "providerGatewayRpcProvider": {
         "type": "string",
-        "description": "Optional shared RPC upstream selection for the provider gateway: auto, shared, helius, or alchemy."
+        "description": "Solana gateway provider: auto or alchemy. Both use Alchemy."
       },
       "swapProvider": {
         "type": "string",
         "description": "Optional Solana swap routing preference: auto or jupiter. Bags launch and fee flows still use the provider gateway separately, but token swaps stay Jupiter-first."
-      },
-      "heliusApiKey": {
-        "type": "string",
-        "description": "Optional user-owned Helius API key. If set, direct user RPC wins over shared proxy mode.",
-        "uiHints": {
-          "sensitive": true
-        }
       },
       "alchemyApiKey": {
         "type": "string",

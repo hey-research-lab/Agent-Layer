@@ -897,45 +897,15 @@ def _provider_url_from_env(name: str, default: str = "") -> str:
 def _resolve_rpc_url(provider: str, network: str) -> tuple[str, str]:
     if network != "mainnet":
         raise RuntimeError("Shared provider gateway RPC is mainnet-only.")
-
-    shared_url = _provider_url_from_env("SHARED_SOLANA_RPC_URL")
-    helius_url = _provider_url_from_env("HELIUS_SHARED_RPC_URL")
-    helius_key = _trim(os.getenv("HELIUS_API_KEY"))
     alchemy_url = _provider_url_from_env("ALCHEMY_SHARED_RPC_URL")
     alchemy_key = _trim(os.getenv("ALCHEMY_API_KEY"))
-
-    if not helius_url and helius_key:
-        helius_url = f"https://mainnet.helius-rpc.com/?api-key={helius_key}"
     if not alchemy_url and alchemy_key:
         alchemy_url = f"https://solana-mainnet.g.alchemy.com/v2/{alchemy_key}"
-
-    if provider == "shared":
-        if shared_url:
-            return ("shared", shared_url)
-        raise RuntimeError("SHARED_SOLANA_RPC_URL is not configured")
-
-    if provider == "helius":
-        if helius_url:
-            return ("helius", helius_url)
-        raise RuntimeError("Helius shared RPC is not configured")
-
-    if provider == "alchemy":
-        if alchemy_url:
-            return ("alchemy", alchemy_url)
-        raise RuntimeError("Alchemy shared RPC is not configured")
-
-    if provider != "auto":
-        raise RuntimeError(f"Unsupported RPC provider: {provider}")
-
-    if shared_url:
-        return ("shared", shared_url)
+    if provider not in {"auto", "alchemy"}:
+        raise RuntimeError(f"Unsupported Solana RPC provider: {provider}. Use auto or alchemy.")
     if alchemy_url:
         return ("alchemy", alchemy_url)
-    if helius_url:
-        return ("helius", helius_url)
-    raise RuntimeError(
-        "No shared Solana RPC is configured. Set SHARED_SOLANA_RPC_URL, HELIUS_API_KEY/HELIUS_SHARED_RPC_URL, or ALCHEMY_API_KEY/ALCHEMY_SHARED_RPC_URL."
-    )
+    raise RuntimeError("Alchemy Solana RPC is not configured. Set ALCHEMY_API_KEY or ALCHEMY_SHARED_RPC_URL.")
 
 
 def _resolve_evm_rpc_url(provider: str, network: str) -> tuple[str, str]:
@@ -996,7 +966,7 @@ def _resolve_evm_rpc_url(provider: str, network: str) -> tuple[str, str]:
 
 def _status_payload() -> dict[str, Any]:
     configured_rpc = []
-    for provider in ("shared", "alchemy", "helius"):
+    for provider in ("alchemy",):
         try:
             resolved, _ = _resolve_rpc_url(provider, "mainnet")
             configured_rpc.append(resolved)
@@ -1307,7 +1277,7 @@ async def rpc_proxy(request: Request) -> JSONResponse:
     try:
         resolved_provider, rpc_url = _resolve_rpc_url(provider, network)
     except Exception as exc:
-        status_code = 403 if "mainnet-only" in str(exc) else 500
+        status_code = 403 if "mainnet-only" in str(exc) else 400 if "Unsupported Solana RPC provider" in str(exc) else 503
         _record_rpc_usage(
             endpoint="solana_rpc",
             network=network,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from urllib.parse import urlsplit
 from typing import Any
 
 import httpx
@@ -15,7 +16,6 @@ from agent_wallet.http_client import get_client
 
 log = logging.getLogger(__name__)
 
-SOLANA_RPC_FALLBACK = "https://api.mainnet-beta.solana.com"
 LAMPORTS_PER_SOL = 1_000_000_000
 
 
@@ -27,22 +27,23 @@ def _parse_gateway_url(rpc_url: str) -> tuple[str, str, str]:
     try:
         parts = rpc_url.split("::", 3)
     except ValueError as exc:
-        raise ProviderError("solana-rpc", f"Malformed provider gateway rpc url: {rpc_url}") from exc
+        raise ProviderError("solana-rpc", "Malformed provider gateway RPC URL") from exc
     if len(parts) == 4:
         _, provider, network, url = parts
     elif len(parts) == 3:
         _, provider, url = parts
         network = "mainnet"
     else:
-        raise ProviderError("solana-rpc", f"Malformed provider gateway rpc url: {rpc_url}")
+        raise ProviderError("solana-rpc", "Malformed provider gateway RPC URL")
     if not url.strip():
-        raise ProviderError("solana-rpc", f"Malformed provider gateway rpc url: {rpc_url}")
+        raise ProviderError("solana-rpc", "Malformed provider gateway RPC URL")
     return provider.strip() or "auto", network.strip().lower() or "mainnet", url.strip()
 
 
-def _fallback_for_rpc_url(rpc_url: str) -> str:
-    """Choose a cluster-appropriate official fallback URL."""
-    return SOLANA_RPC_FALLBACK
+def _safe_rpc_label(rpc_url: str) -> str:
+    if _is_gateway_url(rpc_url):
+        return "provider gateway"
+    return urlsplit(rpc_url).hostname or "Solana RPC"
 
 
 def _normalize_rpc_urls(rpc_url: str | list[str]) -> list[str]:
@@ -61,9 +62,6 @@ def _normalize_rpc_urls(rpc_url: str | list[str]) -> list[str]:
         if value and value not in candidates:
             candidates.append(value)
 
-    fallback = _fallback_for_rpc_url(candidates[0] if candidates else "")
-    if fallback and fallback not in candidates:
-        candidates.append(fallback)
     return candidates
 
 
@@ -95,6 +93,7 @@ async def _do_rpc_call(rpc_url: str, method: str, params: list[Any]) -> dict[str
         bearer = settings.provider_gateway_bearer_token.strip()
         if bearer:
             headers = {"Authorization": f"Bearer {bearer}"}
+    rpc_label = _safe_rpc_label(rpc_url)
 
     last_exc: Exception | None = None
     response: httpx.Response | None = None
@@ -103,13 +102,13 @@ async def _do_rpc_call(rpc_url: str, method: str, params: list[Any]) -> dict[str
             response = await client.post(rpc_url, json=payload, headers=headers)
             if response.status_code == 429:
                 wait_seconds = max(_retry_after_seconds(response), 0.5 * (attempt + 1))
-                last_exc = ProviderError("solana-rpc", f"Rate limited on {rpc_url}")
+                last_exc = ProviderError("solana-rpc", f"Rate limited on {rpc_label}")
                 if attempt == 2:
                     raise last_exc
                 await asyncio.sleep(wait_seconds)
                 continue
             if response.status_code in {403, 500, 502, 503, 504}:
-                last_exc = ProviderError("solana-rpc", f"HTTP {response.status_code} on {rpc_url}")
+                last_exc = ProviderError("solana-rpc", f"HTTP {response.status_code} on {rpc_label}")
                 if attempt == 2:
                     raise last_exc
                 await asyncio.sleep(0.5 * (attempt + 1))
@@ -118,14 +117,14 @@ async def _do_rpc_call(rpc_url: str, method: str, params: list[Any]) -> dict[str
         except (httpx.TimeoutException, httpx.ConnectError) as exc:
             last_exc = exc
             if attempt == 2:
-                raise ProviderError("solana-rpc", f"Network error on {rpc_url}: {exc}") from exc
+                raise ProviderError("solana-rpc", f"Network error on {rpc_label}") from exc
             await asyncio.sleep(0.5 * (attempt + 1))
     if response is None:
-        raise ProviderError("solana-rpc", f"RPC request failed on {rpc_url}: {last_exc}")
+        raise ProviderError("solana-rpc", f"RPC request failed on {rpc_label}: {last_exc}")
     if response.status_code == 429:
-        raise ProviderError("solana-rpc", f"Rate limited on {rpc_url}")
+        raise ProviderError("solana-rpc", f"Rate limited on {rpc_label}")
     if response.status_code != 200:
-        raise ProviderError("solana-rpc", f"HTTP {response.status_code} on {rpc_url}")
+        raise ProviderError("solana-rpc", f"HTTP {response.status_code} on {rpc_label}")
     data = response.json()
     if gateway_mode:
         if not isinstance(data, dict):
@@ -155,9 +154,9 @@ async def rpc_call(
         try:
             return await _do_rpc_call(candidate, method, params)
         except Exception as exc:
-            errors.append(f"{candidate}: {exc}")
+            errors.append(f"{_safe_rpc_label(candidate)}: {exc}")
             if index < len(candidates) - 1:
-                log.warning("Solana RPC failed on %s: %s -- trying next endpoint", candidate, exc)
+                log.warning("Solana RPC failed on %s: %s -- trying next endpoint", _safe_rpc_label(candidate), exc)
                 continue
             raise ProviderError(
                 "solana-rpc",

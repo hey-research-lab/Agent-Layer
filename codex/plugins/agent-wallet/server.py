@@ -36,7 +36,6 @@ HOST_DEFAULT_CONFIG_KEYS = {
     "wdkEvmWalletId",
     "wdkEvmAccountIndex",
     "swapProvider",
-    "heliusApiKey",
     "alchemyApiKey",
     "publicKey",
     "keypairPath",

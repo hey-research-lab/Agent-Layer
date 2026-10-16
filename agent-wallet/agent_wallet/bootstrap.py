@@ -166,7 +166,6 @@ def describe_bootstrap() -> dict[str, str | bool]:
     from agent_wallet.config import (
         default_solana_wallet_path,
         normalize_solana_network,
-        resolve_solana_rpc_url,
         resolve_runtime_solana_rpc_urls,
         settings,
     )
@@ -186,7 +185,7 @@ def describe_bootstrap() -> dict[str, str | bool]:
     return {
         "backend": settings.agent_wallet_backend,
         "network": normalized_network,
-        "rpc_url": rpc_urls[0] if rpc_urls else resolve_solana_rpc_url(normalized_network, ""),
+        "rpc_url": rpc_urls[0],
         "rpc_urls": rpc_urls,
         "auto_create_wallet": settings.solana_auto_create_wallet,
         "keypair_path": str(path),

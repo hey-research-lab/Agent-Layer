@@ -409,7 +409,7 @@ async def main() -> None:
         def fake_register_exact_svm_client(client, signer, networks, rpc_url=None):
             assert networks == raw_requirement["network"]
             assert signer is not None
-            assert rpc_url == "https://api.mainnet-beta.solana.com"
+            assert rpc_url == "https://solana-mainnet.g.alchemy.com/v2/test-key"
 
         x402._load_x402_solana_sdk = lambda: {
             "decode_payment_required_header": fake_decode_payment_required_header,
@@ -418,8 +418,11 @@ async def main() -> None:
             "register_exact_svm_client": fake_register_exact_svm_client,
         }
         x402._build_solana_sdk_signer = lambda backend: object()
+        assert x402._backend_solana_sdk_rpc_url(FakeBackend()) is None
+        direct_backend = FakeBackend()
+        direct_backend.rpc_urls = ["https://solana-mainnet.g.alchemy.com/v2/test-key"]
         headers = await x402._create_payment_headers(
-            backend=FakeBackend(),
+            backend=direct_backend,
             payment_required_header="dummy-header",
             selected_payment={
                 "scheme": "exact",

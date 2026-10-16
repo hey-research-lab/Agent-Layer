@@ -31,7 +31,7 @@
       },
       "providerGatewayRpcProvider": {
         "type": "string",
-        "description": "Optional shared RPC upstream selection for the provider gateway: auto, shared, helius, or alchemy."
+        "description": "Solana gateway provider: auto or alchemy. Both use Alchemy."
       },
       "swapProvider": {
         "type": "string",
