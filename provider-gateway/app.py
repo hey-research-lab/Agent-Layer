@@ -2283,11 +2283,22 @@ async def telemetry_stats(request: Request) -> Response:
     return JSONResponse(stats)
 
 
+_EVM_TRANSFER_RATE: dict[str, deque] = {}
+
+
 async def evm_transfers(request: Request) -> JSONResponse:
     """A bounded, read-only Alchemy transfer page for a single EVM address."""
     auth_error = _require_machine_token(request)
     if auth_error:
         return _json_error(auth_error, 401)
+    ip = _extract_request_ip(request) or "unknown"
+    now = time.monotonic()
+    window = _EVM_TRANSFER_RATE.setdefault(ip, deque())
+    while window and window[0] < now - 60:
+        window.popleft()
+    if len(window) >= 60:
+        return _json_error("Transfer history rate limit exceeded", 429)
+    window.append(now)
     network = str(request.path_params.get("network", "")).lower()
     if network not in {"ethereum", "base", "robinhood"}:
         return _json_error("Unsupported transfer network", 400)

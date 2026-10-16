@@ -201,6 +201,8 @@ EVM transfer history uses `address=0x...`, `direction=outgoing|incoming`,
 Alchemy. Each call fetches one page only. It includes native, internal, ERC-20,
 ERC-721, and ERC-1155 movements. It is not a complete index of contract calls or
 failed transactions. The gateway does not persist wallet addresses or transfers.
+The endpoint applies a per-IP limit of 60 requests per minute in each gateway
+process; production ingress should also enforce its own limits.
 
 For machine JSON-RPC clients that cannot set a bearer header, the protected EVM RPC route also accepts `?token=<PROVIDER_GATEWAY_BEARER_TOKEN>`.
 
