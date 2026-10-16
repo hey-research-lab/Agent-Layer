@@ -929,10 +929,10 @@ def _resolve_rpc_url(provider: str, network: str) -> tuple[str, str]:
 
     if shared_url:
         return ("shared", shared_url)
-    if helius_url:
-        return ("helius", helius_url)
     if alchemy_url:
         return ("alchemy", alchemy_url)
+    if helius_url:
+        return ("helius", helius_url)
     raise RuntimeError(
         "No shared Solana RPC is configured. Set SHARED_SOLANA_RPC_URL, HELIUS_API_KEY/HELIUS_SHARED_RPC_URL, or ALCHEMY_API_KEY/ALCHEMY_SHARED_RPC_URL."
     )
@@ -996,7 +996,7 @@ def _resolve_evm_rpc_url(provider: str, network: str) -> tuple[str, str]:
 
 def _status_payload() -> dict[str, Any]:
     configured_rpc = []
-    for provider in ("shared", "helius", "alchemy"):
+    for provider in ("shared", "alchemy", "helius"):
         try:
             resolved, _ = _resolve_rpc_url(provider, "mainnet")
             configured_rpc.append(resolved)

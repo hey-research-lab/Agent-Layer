@@ -20,6 +20,9 @@ This service is deliberately narrow:
 Signing stays on the user machine in `agent-wallet`.
 
 Shared RPC mode is intentionally mainnet-only. Devnet and testnet should use direct public RPC endpoints instead of the gateway.
+For Solana Mainnet with `provider=auto`, the gateway uses an explicit
+`SHARED_SOLANA_RPC_URL` first, then Alchemy, then Helius. Explicit
+`provider=alchemy` and `provider=helius` still select those providers directly.
 
 ## Current scope
 
@@ -123,9 +126,9 @@ Copy `.env.example` to `.env`.
 Configure the surfaces you want to expose:
 
 - shared Solana RPC:
-  - `SHARED_SOLANA_RPC_URL`, or
-  - `HELIUS_API_KEY`, or
-  - `ALCHEMY_API_KEY`
+  - `ALCHEMY_API_KEY` (default primary), or `ALCHEMY_SHARED_RPC_URL`
+  - `HELIUS_API_KEY` / `HELIUS_SHARED_RPC_URL` (fallback if Alchemy is absent)
+  - `SHARED_SOLANA_RPC_URL` (explicit override of the automatic choice)
 - shared EVM RPC:
   - `SHARED_EVM_ETHEREUM_RPC_URL` / `SHARED_EVM_BASE_RPC_URL` / `SHARED_EVM_ROBINHOOD_RPC_URL`, or
   - `ALCHEMY_ETHEREUM_RPC_URL` / `ALCHEMY_BASE_RPC_URL` / `ALCHEMY_ROBINHOOD_RPC_URL`, or
