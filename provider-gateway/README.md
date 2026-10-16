@@ -29,6 +29,7 @@ Implemented endpoints:
 - `GET /v1/status` — authenticated status and provider capabilities
 - `POST /v1/rpc` — authenticated Solana JSON-RPC proxy with method allowlist
 - `POST /v1/evm/rpc/{network}` — authenticated raw EVM JSON-RPC proxy for `ethereum` / `base` / `robinhood`
+- `GET /v1/evm/transfers/{network}` — bounded Alchemy transfer history for `ethereum` / `base` / `robinhood`
 - `GET /v1/bags/trade/quote` — authenticated Bags trade quote
 - `POST /v1/bags/trade/swap` — authenticated Bags swap transaction creation
 - `POST /v1/bags/launch/token-info` — authenticated Bags token metadata creation
@@ -194,6 +195,12 @@ curl "http://localhost:8000/v1/evm/rpc/ethereum?provider=alchemy" \
     "params": []
   }'
 ```
+
+EVM transfer history uses `address=0x...`, `direction=outgoing|incoming`,
+`page_size=1..100` (default 50), and the optional opaque `page_key` returned by
+Alchemy. Each call fetches one page only. It includes native, internal, ERC-20,
+ERC-721, and ERC-1155 movements. It is not a complete index of contract calls or
+failed transactions. The gateway does not persist wallet addresses or transfers.
 
 For machine JSON-RPC clients that cannot set a bearer header, the protected EVM RPC route also accepts `?token=<PROVIDER_GATEWAY_BEARER_TOKEN>`.
 

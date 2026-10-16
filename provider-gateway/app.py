@@ -2283,11 +2283,72 @@ async def telemetry_stats(request: Request) -> Response:
     return JSONResponse(stats)
 
 
+async def evm_transfers(request: Request) -> JSONResponse:
+    """A bounded, read-only Alchemy transfer page for a single EVM address."""
+    auth_error = _require_machine_token(request)
+    if auth_error:
+        return _json_error(auth_error, 401)
+    network = str(request.path_params.get("network", "")).lower()
+    if network not in {"ethereum", "base", "robinhood"}:
+        return _json_error("Unsupported transfer network", 400)
+    address = request.query_params.get("address", "")
+    if not re.fullmatch(r"0x[a-fA-F0-9]{40}", address):
+        return _json_error("address must be a 20-byte EVM address", 400)
+    direction = request.query_params.get("direction", "outgoing")
+    if direction not in {"outgoing", "incoming"}:
+        return _json_error("direction must be outgoing or incoming", 400)
+    try:
+        page_size = int(request.query_params.get("page_size", "50"))
+    except ValueError:
+        return _json_error("page_size must be an integer", 400)
+    if not 1 <= page_size <= 100:
+        return _json_error("page_size must be between 1 and 100", 400)
+    page_key = request.query_params.get("page_key", "")
+    if page_key and (len(page_key) > 2048 or not re.fullmatch(r"[A-Za-z0-9_+=/.-]+", page_key)):
+        return _json_error("Invalid page_key", 400)
+    try:
+        _, rpc_url = _resolve_evm_rpc_url("alchemy", network)
+    except RuntimeError as exc:
+        return _json_error(str(exc), 503)
+    params: dict[str, Any] = {
+        "fromBlock": "0x0",
+        "toBlock": "latest",
+        "category": ["external", "internal", "erc20", "erc721", "erc1155"],
+        "withMetadata": True,
+        "maxCount": hex(page_size),
+        "order": "desc",
+        "excludeZeroValue": False,
+        "fromAddress" if direction == "outgoing" else "toAddress": address,
+    }
+    if page_key:
+        params["pageKey"] = page_key
+    try:
+        status_code, payload = await _http_post(
+            rpc_url,
+            json_body={"jsonrpc": "2.0", "id": 1, "method": "alchemy_getAssetTransfers", "params": [params]},
+        )
+    except httpx.HTTPError:
+        return _json_error("Alchemy transfer lookup failed", 502)
+    if status_code != 200 or not isinstance(payload, dict) or "error" in payload:
+        return _json_error("Alchemy transfer lookup failed", 502)
+    result = payload.get("result")
+    if not isinstance(result, dict) or not isinstance(result.get("transfers"), list):
+        return _json_error("Invalid Alchemy transfer response", 502)
+    return JSONResponse({
+        "network": network,
+        "address": address.lower(),
+        "direction": direction,
+        "transfers": result["transfers"],
+        "page_key": result.get("pageKey"),
+    })
+
+
 routes = [
     Route("/health", health, methods=["GET"]),
     Route("/v1/status", status, methods=["GET"]),
     Route("/v1/rpc", rpc_proxy, methods=["POST"]),
     Route("/v1/evm/rpc/{network:str}", evm_rpc_proxy, methods=["POST"]),
+    Route("/v1/evm/transfers/{network:str}", evm_transfers, methods=["GET"]),
     Route("/v1/bags/trade/quote", bags_trade_quote, methods=["GET"]),
     Route("/v1/bags/trade/swap", bags_trade_swap, methods=["POST"]),
     Route("/v1/bags/launch/token-info", bags_launch_token_info, methods=["POST"]),
