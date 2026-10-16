@@ -7,6 +7,7 @@ from typing import Any
 
 from agent_wallet.config import normalize_evm_network
 from agent_wallet.providers.evm_portfolio import build_portfolio_snapshot
+from agent_wallet.providers.evm_activity import get_activity
 from agent_wallet.providers import dexscreener, lifi
 from agent_wallet.providers.wdk_evm_local import WdkEvmLocalClient
 from agent_wallet.wallet_layer.base import AgentWalletBackend, WalletBackendError, WalletCapabilities
@@ -692,6 +693,18 @@ class WdkEvmLocalWalletBackend(AgentWalletBackend):
             }
         )
         return result
+
+    async def get_transaction_activity(
+        self, *, page_size: int = 50,
+        outgoing_page_key: str = "", incoming_page_key: str = "",
+    ) -> dict[str, Any]:
+        address = await self.get_address()
+        if not address:
+            raise WalletBackendError("No active EVM wallet address is configured.")
+        return await get_activity(
+            self.network, address, page_size=page_size,
+            outgoing_page_key=outgoing_page_key, incoming_page_key=incoming_page_key,
+        )
 
     async def get_evm_network_info(self) -> dict[str, Any]:
         data = await self.client.get("/v1/evm/network")

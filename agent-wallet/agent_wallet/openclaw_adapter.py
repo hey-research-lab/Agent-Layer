@@ -2005,6 +2005,22 @@ class OpenClawWalletAdapter:
                     risk_level="low",
                 ),
                 AgentToolSpec(
+                    name="get_transaction_activity",
+                    description="List recent incoming and outgoing EVM asset movements, grouped by transaction. Supports paginated history on ethereum, base, and robinhood.",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "network": {"type": "string", "enum": ["ethereum", "base", "robinhood"]},
+                            "page_size": {"type": "integer", "minimum": 1, "maximum": 100},
+                            "outgoing_page_key": {"type": "string"},
+                            "incoming_page_key": {"type": "string"},
+                        },
+                        "additionalProperties": False,
+                    },
+                    read_only=True,
+                    risk_level="low",
+                ),
+                AgentToolSpec(
                     name="get_lifi_supported_chains",
                     description="List the LI.FI chains currently allowed for OpenClaw cross-chain routing.",
                     input_schema={
@@ -5146,6 +5162,14 @@ class OpenClawWalletAdapter:
                 if address is not None and not isinstance(address, str):
                     raise WalletBackendError("address must be a string when provided.")
                 data = await active_backend.get_balance(address=address)
+                return AgentToolResult(tool=tool_name, ok=True, data=data)
+
+            if tool_name == "get_transaction_activity":
+                data = await active_backend.get_transaction_activity(
+                    page_size=args.get("page_size", 50),
+                    outgoing_page_key=args.get("outgoing_page_key", ""),
+                    incoming_page_key=args.get("incoming_page_key", ""),
+                )
                 return AgentToolResult(tool=tool_name, ok=True, data=data)
 
             if tool_name == "get_lifi_supported_chains":

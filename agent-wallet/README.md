@@ -10,6 +10,17 @@ Current focus:
 - minimal external API surface
 - easy embedding into agent runtimes or MCP adapters
 
+### EVM activity history
+
+`get_transaction_activity` reads the active local wallet's asset movements on
+Ethereum, Base, or Robinhood Chain. It fetches one incoming and one outgoing
+Alchemy transfer page through `provider-gateway` and groups events by transaction
+hash. Pass the returned `next_outgoing_page_key` and `next_incoming_page_key`
+to load older pages; `__end__` marks an exhausted direction. A bounded, 30-second
+process-local cache avoids repeated provider reads. No transaction history is
+persisted on the gateway or in the wallet vault. This feed covers transfers,
+not failed transactions or contract calls without an asset movement.
+
 ## OpenClaw integration
 
 The package now includes a thin adapter for agent runtimes:

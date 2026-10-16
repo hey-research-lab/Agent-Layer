@@ -1399,6 +1399,20 @@ const evmToolDefinitions = [
     },
   },
   {
+    name: "get_transaction_activity",
+    description: "List recent EVM asset movements grouped by transaction on Ethereum, Base, or Robinhood Chain. Use page keys to load older activity. Failed and transfer-free contract calls are not included.",
+    parameters: {
+      type: "object",
+      properties: {
+        network: { type: "string", enum: ["ethereum", "base", "robinhood"] },
+        page_size: { type: "integer", minimum: 1, maximum: 100 },
+        outgoing_page_key: { type: "string" },
+        incoming_page_key: { type: "string" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "get_lifi_supported_chains",
     description: "List the LI.FI chains currently allowed for OpenClaw cross-chain routing.",
     parameters: { type: "object", properties: {}, additionalProperties: false },
