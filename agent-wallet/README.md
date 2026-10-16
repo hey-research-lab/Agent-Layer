@@ -279,10 +279,10 @@ In that mode, `agent-wallet` will auto-resolve:
 - `mainnet` -> `https://solana-mainnet.g.alchemy.com/v2/<ALCHEMY_API_KEY>`
 - no automatic public RPC fallback; only explicitly configured endpoints are used
 
-Solana x402 signing uses an SDK that requires a direct JSON-RPC URL. Configure
-`ALCHEMY_API_KEY` or a direct Alchemy `SOLANA_RPC_URL` to enable that path; the
-gateway-only configuration fails with a clear error instead of sending the
-payment preparation request to a public RPC.
+Solana x402 signing uses an SDK that requires a standard JSON-RPC URL. In shared
+mode it uses the gateway's `/v1/rpc/x402` endpoint, backed by the gateway's
+Alchemy key. The endpoint only allows `getAccountInfo` and `getLatestBlockhash`.
+Direct Alchemy configuration also works.
 
 For OpenClaw self-hosting, users can keep their own Alchemy key locally in `.env` or shell env. Nothing needs to be proxied or hosted by us.
 

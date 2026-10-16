@@ -43,6 +43,10 @@ ALLOWED_RPC_METHODS = {
     "sendTransaction",
 }
 
+# The x402 SVM SDK accepts only a standard JSON-RPC URL and uses these reads
+# while constructing a payment. Keep this narrower than the wallet RPC relay.
+ALLOWED_X402_RPC_METHODS = {"getAccountInfo", "getLatestBlockhash"}
+
 ALLOWED_EVM_RPC_METHODS = {
     "alchemy_getTokenBalances",
     "eth_blockNumber",
@@ -1323,6 +1327,39 @@ async def rpc_proxy(request: Request) -> JSONResponse:
     )
 
 
+async def x402_rpc_proxy(request: Request) -> JSONResponse:
+    auth_error = _require_machine_token(request)
+    if auth_error:
+        return _json_error(auth_error, 401)
+    try:
+        body = await request.json()
+    except Exception:
+        return _json_error("Invalid JSON body", 400)
+    if not isinstance(body, dict) or body.get("jsonrpc") != "2.0":
+        return _json_error("Expected one JSON-RPC 2.0 request", 400)
+    method = body.get("method")
+    if not isinstance(method, str) or method not in ALLOWED_X402_RPC_METHODS:
+        return _json_error("RPC method is not allowed for x402", 403)
+    params = body.get("params", [])
+    if not isinstance(params, list):
+        return _json_error("Field 'params' must be an array", 400)
+    request_id = body.get("id")
+    if not isinstance(request_id, (str, int)) or isinstance(request_id, bool):
+        return _json_error("JSON-RPC id must be a string or integer", 400)
+    try:
+        _, rpc_url = _resolve_rpc_url("alchemy", "mainnet")
+    except RuntimeError as exc:
+        return _json_error(str(exc), 503)
+    payload = {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}
+    try:
+        status_code, upstream = await _http_post(rpc_url, json_body=payload)
+    except httpx.HTTPError:
+        return _json_error("Alchemy Solana RPC request failed", 502)
+    if not isinstance(upstream, dict) or status_code != 200:
+        return _json_error("Alchemy Solana RPC returned an invalid response", 502)
+    return JSONResponse(upstream)
+
+
 async def evm_rpc_proxy(request: Request) -> JSONResponse:
     auth_error = _require_machine_token(request)
     if auth_error:
@@ -2328,6 +2365,7 @@ routes = [
     Route("/health", health, methods=["GET"]),
     Route("/v1/status", status, methods=["GET"]),
     Route("/v1/rpc", rpc_proxy, methods=["POST"]),
+    Route("/v1/rpc/x402", x402_rpc_proxy, methods=["POST"]),
     Route("/v1/evm/rpc/{network:str}", evm_rpc_proxy, methods=["POST"]),
     Route("/v1/evm/transfers/{network:str}", evm_transfers, methods=["GET"]),
     Route("/v1/bags/trade/quote", bags_trade_quote, methods=["GET"]),

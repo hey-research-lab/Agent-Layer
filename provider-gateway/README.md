@@ -31,6 +31,12 @@ Implemented endpoints:
 - `GET /health` — public health and capability snapshot
 - `GET /v1/status` — authenticated status and provider capabilities
 - `POST /v1/rpc` — authenticated Solana JSON-RPC proxy with method allowlist
+- `POST /v1/rpc/x402` — standard JSON-RPC for the Solana x402 SDK; only `getAccountInfo` and `getLatestBlockhash`, forwarded to Alchemy
+
+The x402 SDK only accepts an RPC URL. When gateway bearer auth is enabled, the
+wallet passes the gateway token in that endpoint's `token` query parameter,
+using the gateway's existing machine-client authentication. Keep request URLs
+out of access logs and error reports in this mode.
 - `POST /v1/evm/rpc/{network}` — authenticated raw EVM JSON-RPC proxy for `ethereum` / `base` / `robinhood`
 - `GET /v1/evm/transfers/{network}` — bounded Alchemy transfer history for `ethereum` / `base` / `robinhood`
 - `GET /v1/bags/trade/quote` — authenticated Bags trade quote
