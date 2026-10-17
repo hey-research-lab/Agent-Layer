@@ -38,6 +38,10 @@ Recommended config:
           "userId": "openclaw-local-user",
           "backend": "solana_local",
           "network": "mainnet",
+          "rpcUrls": [
+            "https://your-primary-rpc.example",
+            "https://api.mainnet-beta.solana.com"
+          ],
           "signOnly": false,
           "encryptUserWallets": true,
           "migratePlaintextUserWallets": true,
@@ -73,7 +77,7 @@ If that runtime is not present, set `plugins.entries.agent-wallet.config.package
 
 That installs the Python backend, Node dependencies for the local EVM runtime, patches the OpenClaw plugin config, and provisions the first encrypted per-user Solana mainnet wallet when no explicit signer is already configured. EVM readiness can still be auto-healed during normal wallet switching when the runtime has sealed local vault credentials.
 
-For self-hosted installs, prefer `SOLANA_RPC_URL` / `SOLANA_RPC_URLS` in local env and treat the plugin `rpcUrl` / `rpcUrls` fields as fallback only. If the local runtime exposes `ALCHEMY_API_KEY`, the wallet can derive the Solana RPC URL automatically for `mainnet`. Local env always takes precedence over `openclaw.json`.
+For self-hosted installs, prefer `SOLANA_RPC_URL` / `SOLANA_RPC_URLS` in local env and treat the plugin `rpcUrl` / `rpcUrls` fields as fallback only. If the local runtime exposes `ALCHEMY_API_KEY` or `HELIUS_API_KEY`, the wallet can derive the Solana RPC URL automatically for `mainnet`. Local env always takes precedence over `openclaw.json`.
 
 Provide only `AGENT_WALLET_BOOT_KEY` to the runtime. Provision `master_key`, `approval_secret`, and any signer `private_key` into `sealed_keys.json`, not `openclaw.json`.
 

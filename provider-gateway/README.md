@@ -5,7 +5,7 @@
 It is intended to solve two onboarding problems:
 
 - users should not need to bring their own Bags API key to get started
-- users should not need to bring their own Alchemy key to get a reasonable default RPC path
+- users should not need to bring their own Helius/Alchemy key to get a reasonable default RPC path
 
 This service is deliberately narrow:
 
@@ -20,9 +20,9 @@ This service is deliberately narrow:
 Signing stays on the user machine in `agent-wallet`.
 
 Shared RPC mode is intentionally mainnet-only. Devnet and testnet should use direct public RPC endpoints instead of the gateway.
-For Solana Mainnet, both `provider=auto` and `provider=alchemy` use Alchemy.
-Other provider values are rejected. If Alchemy is unavailable, the gateway
-returns an error instead of routing to another RPC provider.
+For Solana Mainnet with `provider=auto`, the gateway uses an explicit
+`SHARED_SOLANA_RPC_URL` first, then Alchemy, then Helius. Explicit
+`provider=alchemy` and `provider=helius` still select those providers directly.
 
 ## Current scope
 
@@ -113,7 +113,7 @@ Not implemented yet:
 ## Security model
 
 - `BAGS_API_KEY` lives only in this service
-- shared Alchemy credentials live only in this service
+- shared Helius/Alchemy credentials live only in this service
 - users authenticate to this service with a separate bearer token
 - user wallets sign locally; this service never sees private keys
 
@@ -126,7 +126,9 @@ Copy `.env.example` to `.env`.
 Configure the surfaces you want to expose:
 
 - shared Solana RPC:
-  - `ALCHEMY_API_KEY` or `ALCHEMY_SHARED_RPC_URL`
+  - `ALCHEMY_API_KEY` (default primary), or `ALCHEMY_SHARED_RPC_URL`
+  - `HELIUS_API_KEY` / `HELIUS_SHARED_RPC_URL` (fallback if Alchemy is absent)
+  - `SHARED_SOLANA_RPC_URL` (explicit override of the automatic choice)
 - shared EVM RPC:
   - `SHARED_EVM_ETHEREUM_RPC_URL` / `SHARED_EVM_BASE_RPC_URL` / `SHARED_EVM_ROBINHOOD_RPC_URL`, or
   - `ALCHEMY_ETHEREUM_RPC_URL` / `ALCHEMY_BASE_RPC_URL` / `ALCHEMY_ROBINHOOD_RPC_URL`, or
@@ -291,8 +293,9 @@ Recommended setup:
    - `REQUIRE_BEARER_AUTH=false` for the current public beta mode
    - `BAGS_API_KEY`
    - one RPC source for shared Solana RPC:
-     - `ALCHEMY_API_KEY`, or
-     - `ALCHEMY_SHARED_RPC_URL`
+     - `SHARED_SOLANA_RPC_URL`, or
+     - `HELIUS_API_KEY`, or
+     - `ALCHEMY_API_KEY`
    - optional shared EVM RPC:
      - `SHARED_EVM_ETHEREUM_RPC_URL`
      - `SHARED_EVM_BASE_RPC_URL`
@@ -342,14 +345,20 @@ Example production variable sets:
 3. Bags + shared Solana RPC gateway
    - `REQUIRE_BEARER_AUTH=false`
    - `BAGS_API_KEY=...`
-   - `ALCHEMY_API_KEY=...` or `ALCHEMY_SHARED_RPC_URL=...`
+   - plus one of:
+     - `SHARED_SOLANA_RPC_URL=...`
+     - `HELIUS_API_KEY=...`
+     - `ALCHEMY_API_KEY=...`
 
 4. Houdini + shared Solana RPC gateway
    - `REQUIRE_BEARER_AUTH=true`
    - `PROVIDER_GATEWAY_BEARER_TOKEN=...`
    - `HOUDINI_API_KEY=...`
    - `HOUDINI_API_SECRET=...`
-   - `ALCHEMY_API_KEY=...` or `ALCHEMY_SHARED_RPC_URL=...`
+   - plus one of:
+     - `SHARED_SOLANA_RPC_URL=...`
+     - `HELIUS_API_KEY=...`
+     - `ALCHEMY_API_KEY=...`
 
 4. Shared EVM RPC gateway
    - `REQUIRE_BEARER_AUTH=true`

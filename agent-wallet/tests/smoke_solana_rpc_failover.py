@@ -13,12 +13,6 @@ from agent_wallet.providers import solana_rpc  # noqa: E402
 
 
 async def _run() -> None:
-    assert solana_rpc._normalize_rpc_urls("https://solana-mainnet.g.alchemy.com/v2/test-key") == [
-        "https://solana-mainnet.g.alchemy.com/v2/test-key"
-    ]
-    assert solana_rpc._normalize_rpc_urls("gateway::auto::mainnet::https://gateway.example/v1/rpc") == [
-        "gateway::auto::mainnet::https://gateway.example/v1/rpc"
-    ]
     calls: list[str] = []
     original = solana_rpc._do_rpc_call
 

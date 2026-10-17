@@ -102,6 +102,7 @@ def _apply_config_overrides(config: dict[str, Any]) -> None:
             True,
         ),
         "swapProvider": ("SOLANA_SWAP_PROVIDER", config.get("swapProvider"), True),
+        "heliusApiKey": ("HELIUS_API_KEY", config.get("heliusApiKey"), True),
         "alchemyApiKey": ("ALCHEMY_API_KEY", config.get("alchemyApiKey"), True),
         "publicKey": ("SOLANA_AGENT_PUBLIC_KEY", config.get("publicKey"), True),
         "keypairPath": ("SOLANA_AGENT_KEYPAIR_PATH", config.get("keypairPath"), True),

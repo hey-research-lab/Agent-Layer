@@ -1,4 +1,4 @@
-"""Verify Solana gateway routing is Alchemy-only."""
+"""Verify automatic Solana RPC selection prefers Alchemy."""
 
 import os
 from unittest.mock import patch
@@ -15,24 +15,13 @@ def main() -> None:
         os.environ["ALCHEMY_API_KEY"] = "alchemy-test"
         os.environ["HELIUS_API_KEY"] = "helius-test"
         assert _resolve_rpc_url("auto", "mainnet")[0] == "alchemy"
-        assert _resolve_rpc_url("alchemy", "mainnet")[0] == "alchemy"
-        assert _status_payload()["rpc_upstreams"] == ["alchemy"]
+        assert _resolve_rpc_url("helius", "mainnet")[0] == "helius"
+        assert _status_payload()["rpc_upstreams"] == ["alchemy", "helius"]
         os.environ["SHARED_SOLANA_RPC_URL"] = "https://custom.example/rpc"
-        assert _resolve_rpc_url("auto", "mainnet")[0] == "alchemy"
-        for legacy_provider in ("helius", "shared"):
-            try:
-                _resolve_rpc_url(legacy_provider, "mainnet")
-            except RuntimeError as exc:
-                assert "Unsupported Solana RPC provider" in str(exc)
-            else:
-                raise AssertionError(f"Legacy provider {legacy_provider} was accepted")
+        assert _resolve_rpc_url("auto", "mainnet") == ("shared", "https://custom.example/rpc")
+        del os.environ["SHARED_SOLANA_RPC_URL"]
         del os.environ["ALCHEMY_API_KEY"]
-        try:
-            _resolve_rpc_url("auto", "mainnet")
-        except RuntimeError as exc:
-            assert "Alchemy Solana RPC is not configured" in str(exc)
-        else:
-            raise AssertionError("Gateway routed without Alchemy")
+        assert _resolve_rpc_url("auto", "mainnet")[0] == "helius"
 
 
 if __name__ == "__main__":

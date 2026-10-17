@@ -218,9 +218,9 @@ For production `mainnet`, prefer a dedicated RPC instead of the public Solana en
 
 - `SOLANA_RPC_URL` for one primary endpoint
 - `SOLANA_RPC_URLS` as a comma-separated ordered failover list
-- or just `ALCHEMY_API_KEY`, which derives the Solana Mainnet RPC URL
+- or just `ALCHEMY_API_KEY` / `HELIUS_API_KEY`, which auto-derive a primary Solana RPC for `mainnet`
 
-Production recommendation: treat RPC as deployment-owned config, not wallet logic. Runtime env wins over `openclaw.json` plugin config, so keep the Alchemy key in deployment secrets or service env and use plugin `rpcUrl` / `rpcUrls` only for an explicit custom RPC.
+Production recommendation: treat RPC as deployment-owned config, not wallet logic. Runtime env wins over `openclaw.json` plugin config, so keep `Alchemy/Helius/QuickNode` endpoints in deployment secrets or service env and use plugin `rpcUrl` / `rpcUrls` only as local fallback.
 
 For OpenClaw onboarding, `agent-wallet` now ships with a hosted default provider gateway:
 
@@ -233,6 +233,8 @@ For a self-hosted install where each operator brings their own RPC key, a minima
 ```bash
 AGENT_WALLET_BOOT_KEY=...
 ALCHEMY_API_KEY=...
+# or
+HELIUS_API_KEY=...
 ```
 
 `AGENT_WALLET_BOOT_KEY` is the root local secret for the wallet runtime. It is not a wallet private key, not a Solana keypair, and not something provided by this repository or by OpenClaw. The operator must generate it locally and keep it safe.
@@ -277,14 +279,11 @@ export AGENT_WALLET_BOOT_KEY='paste-generated-secret-here'
 In that mode, `agent-wallet` will auto-resolve:
 
 - `mainnet` -> `https://solana-mainnet.g.alchemy.com/v2/<ALCHEMY_API_KEY>`
-- no automatic public RPC fallback; only explicitly configured endpoints are used
+- `mainnet` -> `https://mainnet.helius-rpc.com/?api-key=<HELIUS_API_KEY>`
 
-Solana x402 signing uses an SDK that requires a direct JSON-RPC URL. Configure
-`ALCHEMY_API_KEY` or a direct Alchemy `SOLANA_RPC_URL` to enable that path; the
-gateway-only configuration fails with a clear error instead of sending the
-payment preparation request to a public RPC.
+and still append the official Solana endpoint as fallback.
 
-For OpenClaw self-hosting, users can keep their own Alchemy key locally in `.env` or shell env. Nothing needs to be proxied or hosted by us.
+For OpenClaw self-hosting, this means users can keep their own Alchemy/Helius key locally in `.env` or shell env. Nothing needs to be proxied or hosted by us.
 
 For OpenClaw install/runtime, the default creation flow is:
 
@@ -505,7 +504,7 @@ Recommended Solana mainnet setup:
 AGENT_WALLET_BACKEND=solana_local
 AGENT_WALLET_BOOT_KEY=change-this-in-production
 SOLANA_NETWORK=mainnet
-ALCHEMY_API_KEY=your-alchemy-key
+SOLANA_RPC_URLS=https://api.mainnet-beta.solana.com
 SOLANA_AUTO_CREATE_WALLET=true
 AGENT_WALLET_SIGN_ONLY=false
 ```
