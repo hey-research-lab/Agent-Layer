@@ -2006,11 +2006,13 @@ class OpenClawWalletAdapter:
                 ),
                 AgentToolSpec(
                     name="get_transaction_activity",
-                    description="List recent incoming and outgoing EVM asset movements, grouped by transaction. Supports paginated history on ethereum, base, and robinhood.",
+                    description="List recent incoming and outgoing EVM asset movements, grouped by transaction. Supports paginated history on ethereum, base, and robinhood. Use direction to fetch only sent or received activity, and the returned page keys for older pages. Entries older than complete_since may have gaps until the other direction is paged further. Unindexed wallet-sent transactions appear with status submitted, confirmed (no asset movement, e.g. approve), failed (reverted), or dropped.",
                     input_schema={
                         "type": "object",
                         "properties": {
                             "network": {"type": "string", "enum": ["ethereum", "base", "robinhood"]},
+                            "direction": {"type": "string", "enum": ["both", "outgoing", "incoming"]},
+                            "include_nfts": {"type": "boolean"},
                             "page_size": {"type": "integer", "minimum": 1, "maximum": 100},
                             "outgoing_page_key": {"type": "string"},
                             "incoming_page_key": {"type": "string"},
@@ -5181,7 +5183,9 @@ class OpenClawWalletAdapter:
 
             if tool_name == "get_transaction_activity":
                 data = await active_backend.get_transaction_activity(
-                    page_size=args.get("page_size", 50),
+                    page_size=args.get("page_size", 20),
+                    direction=args.get("direction", "both"),
+                    include_nfts=bool(args.get("include_nfts", False)),
                     outgoing_page_key=args.get("outgoing_page_key", ""),
                     incoming_page_key=args.get("incoming_page_key", ""),
                 )

@@ -14,14 +14,22 @@ Current focus:
 
 `get_transaction_activity` reads the active local wallet's asset movements on
 Ethereum, Base, or Robinhood Chain. It fetches one incoming and one outgoing
-Alchemy transfer page through `provider-gateway` and groups events by transaction
-hash. Pass the returned `next_outgoing_page_key` and `next_incoming_page_key`
-to load older pages; `__end__` marks an exhausted direction. A bounded, 30-second
-process-local cache avoids repeated provider reads. Successful wallet submissions
+Alchemy transfer page (20 transfers by default) through `provider-gateway` and
+groups events by transaction hash; `direction=outgoing|incoming` fetches only one
+side and halves the provider cost. Pass the returned `next_outgoing_page_key` and
+`next_incoming_page_key` to load older pages; `__end__` marks an exhausted
+direction. Because the two directions page independently, `complete_since` marks
+the timestamp after which the merged list has no gaps. NFTs are excluded unless
+`include_nfts` is true. Caching and spend limits live in the gateway. Successful wallet submissions
 are recorded locally under `OPENCLAW_HOME/cache/evm-activity` as short-lived hash
-placeholders until Alchemy indexes them. The gateway and wallet vault persist no
-transaction history. This feed covers transfers,
-not failed transactions or contract calls without an asset movement.
+placeholders until Alchemy indexes them. A placeholder older than 30 seconds is
+settled from one transaction receipt read (rechecked at most every 30 seconds, up
+to five per call) and the verdict is stored: `failed` (reverted, gas spent),
+`confirmed` (succeeded without an asset movement, e.g. an ERC-20 approval), or
+`dropped` (no receipt or mempool entry after 30 minutes); otherwise it stays
+`submitted`. The gateway and wallet vault persist no
+transaction history. This feed covers transfers, not zero-value transfers,
+failed transactions, or contract calls without an asset movement.
 
 ## OpenClaw integration
 

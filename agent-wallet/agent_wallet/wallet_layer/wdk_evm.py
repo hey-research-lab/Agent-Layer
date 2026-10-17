@@ -695,15 +695,16 @@ class WdkEvmLocalWalletBackend(AgentWalletBackend):
         return result
 
     async def get_transaction_activity(
-        self, *, page_size: int = 50,
+        self, *, page_size: int = 20, direction: str = "both", include_nfts: bool = False,
         outgoing_page_key: str = "", incoming_page_key: str = "",
     ) -> dict[str, Any]:
         address = await self.get_address()
         if not address:
             raise WalletBackendError("No active EVM wallet address is configured.")
         return await get_activity(
-            self.network, address, page_size=page_size,
+            self.network, address, page_size=page_size, direction=direction, include_nfts=include_nfts,
             outgoing_page_key=outgoing_page_key, incoming_page_key=incoming_page_key,
+            receipt_lookup=self.get_evm_transaction_receipt,
         )
 
     async def get_evm_network_info(self) -> dict[str, Any]:
