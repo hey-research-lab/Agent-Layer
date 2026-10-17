@@ -1399,6 +1399,22 @@ const evmToolDefinitions = [
     },
   },
   {
+    name: "get_transaction_activity",
+    description: "List recent EVM asset movements grouped by transaction on Ethereum, Base, or Robinhood Chain. Use direction to fetch only sent or received activity, and page keys to load older activity. Entries older than complete_since may have gaps. Unindexed wallet-sent transactions appear with status submitted, confirmed (no asset movement, e.g. approve), failed (reverted), or dropped. Zero-value transfers, failed transactions, and transfer-free contract calls are not included; NFTs only with include_nfts.",
+    parameters: {
+      type: "object",
+      properties: {
+        network: { type: "string", enum: ["ethereum", "base", "robinhood"] },
+        direction: { type: "string", enum: ["both", "outgoing", "incoming"] },
+        include_nfts: { type: "boolean" },
+        page_size: { type: "integer", minimum: 1, maximum: 100 },
+        outgoing_page_key: { type: "string" },
+        incoming_page_key: { type: "string" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "get_lifi_supported_chains",
     description: "List the LI.FI chains currently allowed for OpenClaw cross-chain routing.",
     parameters: { type: "object", properties: {}, additionalProperties: false },

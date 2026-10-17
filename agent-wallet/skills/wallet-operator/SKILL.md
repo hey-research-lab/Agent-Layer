@@ -60,6 +60,7 @@ Use this skill before calling OpenClaw wallet tools. It is the routing guide for
 - `get_evm_token_metadata`: ERC-20 metadata by `token_address`, optional `network`.
 - `get_evm_fee_rates`: EVM fee suggestions.
 - `get_evm_transaction_receipt`: EVM receipt by `tx_hash`.
+- `get_transaction_activity`: recent EVM transaction history (ethereum, base, robinhood). Pass `direction` (`outgoing`/`incoming`) when the user asks only about sent or received funds; it halves the provider reads. Page with the returned page keys only when the user wants older history.
 
 ## Balance Routing
 

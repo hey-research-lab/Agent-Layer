@@ -28,6 +28,7 @@
       "get_evm_token_balance",
       "get_evm_token_metadata",
       "get_evm_transaction_receipt",
+      "get_transaction_activity",
       "get_uniswap_swap_quote",
       "get_kamino_earn_positions",
       "get_kamino_lend_market_reserves",

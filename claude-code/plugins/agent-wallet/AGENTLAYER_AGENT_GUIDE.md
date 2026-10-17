@@ -172,6 +172,9 @@ There is no narrower version of the full permission group — pass `scope:
 
 - **Read utilities**: `get_evm_token_balance`, `get_evm_token_metadata`,
   `get_evm_transaction_receipt` (by tx hash), `get_evm_fee_rates`.
+- **History**: `get_transaction_activity` lists recent sent/received asset
+  movements grouped by transaction; pass `direction` when only one side is
+  needed and page with the returned keys only for older history.
 - **Transfers**: `transfer_evm_native` (wei), `transfer_evm_token` (ERC-20,
   raw base units + `token_address`).
 - **Swaps — two independent routers, pick one**:
