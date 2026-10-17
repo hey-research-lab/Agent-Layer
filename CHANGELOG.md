@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## v0.1.123 - 2026-10-17
+
+- **EVM transaction activity on Ethereum, Base, and Robinhood Chain.** The new
+  read-only `get_transaction_activity` tool loads sent and received asset
+  movements on demand through the provider gateway, groups them by transaction,
+  and supports separate direction filters and pagination. NFTs are optional;
+  exact raw amounts and ERC-1155 token details are preserved. Recently submitted
+  wallet transactions appear before indexing and resolve to confirmed, failed,
+  or dropped status from receipts. Gateway caching and request budgets bound
+  Alchemy usage. No full transaction history is stored locally.
+
 ## v0.1.122 - 2026-10-15
 
 - **Morpho yield report: deposits instead of a yearly estimate.** Each vault in
