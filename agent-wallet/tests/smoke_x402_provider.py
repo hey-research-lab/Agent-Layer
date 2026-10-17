@@ -418,17 +418,7 @@ async def main() -> None:
             "register_exact_svm_client": fake_register_exact_svm_client,
         }
         x402._build_solana_sdk_signer = lambda backend: object()
-        assert x402._backend_solana_sdk_rpc_url(FakeBackend()) == (
-            "https://agent-layer.example.com/v1/rpc/x402"
-        )
-        original_gateway_token = x402.settings.provider_gateway_bearer_token
-        try:
-            x402.settings.provider_gateway_bearer_token = "a b"
-            assert x402._backend_solana_sdk_rpc_url(FakeBackend()) == (
-                "https://agent-layer.example.com/v1/rpc/x402?token=a+b"
-            )
-        finally:
-            x402.settings.provider_gateway_bearer_token = original_gateway_token
+        assert x402._backend_solana_sdk_rpc_url(FakeBackend()) is None
         direct_backend = FakeBackend()
         direct_backend.rpc_urls = ["https://solana-mainnet.g.alchemy.com/v2/test-key"]
         headers = await x402._create_payment_headers(

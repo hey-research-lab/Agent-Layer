@@ -11,10 +11,8 @@ from types import SimpleNamespace
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from agent_wallet.config import settings
 from agent_wallet.exceptions import ProviderError
 from agent_wallet.http_client import get_client
-from agent_wallet.providers.solana_rpc import _parse_gateway_url
 from agent_wallet.wallet_layer.base import AgentWalletBackend
 
 CDP_BAZAAR_DISCOVERY_BASE_URL = "https://api.cdp.coinbase.com/platform/v2/x402/discovery"
@@ -69,19 +67,14 @@ def _backend_network(backend: AgentWalletBackend) -> str:
 
 def _backend_solana_sdk_rpc_url(backend: AgentWalletBackend) -> str | None:
     candidates = getattr(backend, "rpc_urls", None)
-    urls = list(candidates) if isinstance(candidates, list) else []
-    urls.append(getattr(backend, "rpc_url", None))
-    for candidate in urls:
-        text = _trim(candidate)
-        if text.startswith(("http://", "https://")):
-            return text
-        if text.startswith("gateway::"):
-            _, network, gateway_url = _parse_gateway_url(text)
-            if network != "mainnet" or not gateway_url.endswith("/v1/rpc"):
-                return None
-            sdk_url = f"{gateway_url}/x402"
-            token = settings.provider_gateway_bearer_token.strip()
-            return _append_query(sdk_url, {"token": token}) if token else sdk_url
+    if isinstance(candidates, list):
+        for candidate in candidates:
+            text = _trim(candidate)
+            if text.startswith(("http://", "https://")):
+                return text
+    primary = _trim(getattr(backend, "rpc_url", None))
+    if primary.startswith(("http://", "https://")):
+        return primary
     return None
 
 
