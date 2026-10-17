@@ -2283,7 +2283,86 @@ async def telemetry_stats(request: Request) -> Response:
     return JSONResponse(stats)
 
 
-_EVM_TRANSFER_RATE: dict[str, deque] = {}
+# alchemy_getAssetTransfers costs ~150 CU per call and shares the Alchemy key with
+# balances and broadcasts, so this route is capped by a hard budget rather than per
+# IP (client IP headers can be forged). Cache hits are free and skip the budget.
+_TRANSFER_PER_ADDRESS_PER_MIN = int(os.getenv("EVM_TRANSFERS_PER_ADDRESS_PER_MIN", "20") or "20")
+_TRANSFER_MAX_PER_MIN = int(os.getenv("EVM_TRANSFERS_MAX_PER_MIN", "120") or "120")
+_TRANSFER_MAX_PER_DAY = int(os.getenv("EVM_TRANSFERS_MAX_PER_DAY", "20000") or "20000")
+_TRANSFER_CACHE_TTL = float(os.getenv("EVM_TRANSFERS_CACHE_TTL_SECONDS", "60") or "60")
+_TRANSFER_CACHE: dict[tuple, tuple[float, dict[str, Any]]] = {}
+_TRANSFER_BY_ADDRESS: dict[str, deque] = {}
+_TRANSFER_MINUTE: deque = deque()
+_TRANSFER_DAY: dict[str, Any] = {"day": "", "count": 0}
+
+
+def _transfer_budget_error(address: str) -> tuple[str, int] | None:
+    """Reserve one Alchemy call, or return (message, retry_after_seconds)."""
+    now = time.monotonic()
+    window = _TRANSFER_BY_ADDRESS.setdefault(address, deque())
+    for queue in (window, _TRANSFER_MINUTE):
+        while queue and queue[0] < now - 60:
+            queue.popleft()
+    if len(window) >= _TRANSFER_PER_ADDRESS_PER_MIN:
+        return "Transfer history limit for this address reached; retry in a minute", 60
+    if len(_TRANSFER_MINUTE) >= _TRANSFER_MAX_PER_MIN:
+        return "Transfer history is busy; retry in a minute", 60
+    today = time.strftime("%Y-%m-%d", time.gmtime())
+    if _TRANSFER_DAY["day"] != today:
+        _TRANSFER_DAY.update(day=today, count=0)
+    if _TRANSFER_DAY["count"] >= _TRANSFER_MAX_PER_DAY:
+        seconds_left = 86400 - int(time.time()) % 86400
+        return "Transfer history daily budget reached; balances are unaffected", seconds_left
+    if len(_TRANSFER_BY_ADDRESS) > 5000:
+        _TRANSFER_BY_ADDRESS.clear()
+        window = _TRANSFER_BY_ADDRESS.setdefault(address, deque())
+    window.append(now)
+    _TRANSFER_MINUTE.append(now)
+    _TRANSFER_DAY["count"] += 1
+    return None
+
+
+def _compact_transfer(transfer: dict[str, Any]) -> dict[str, Any]:
+    raw_contract = transfer.get("rawContract") or {}
+    block = transfer.get("blockNum")
+    item = {
+        "id": transfer.get("uniqueId"),
+        "hash": transfer.get("hash"),
+        "block_number": int(block, 16) if isinstance(block, str) and block.startswith("0x") else block,
+        "timestamp": (transfer.get("metadata") or {}).get("blockTimestamp"),
+        "category": transfer.get("category"),
+        "from": transfer.get("from"),
+        "to": transfer.get("to"),
+        "asset": transfer.get("asset"),
+        "value": transfer.get("value"),
+        "token_address": raw_contract.get("address"),
+    }
+    # "value" is a float and loses precision on large amounts; the raw hex is exact.
+    raw_value = _hex_to_int(raw_contract.get("value"))
+    if raw_value is not None:
+        item["raw_value"] = str(raw_value)
+    decimals = _hex_to_int(raw_contract.get("decimal"))
+    if decimals is not None:
+        item["decimals"] = decimals
+    token_id = transfer.get("tokenId") or transfer.get("erc721TokenId")
+    if token_id:
+        item["token_id"] = token_id
+    erc1155 = transfer.get("erc1155Metadata")
+    if isinstance(erc1155, list):
+        item["erc1155"] = [
+            {"token_id": entry.get("tokenId"), "value": str(_hex_to_int(entry.get("value")) or 0)}
+            for entry in erc1155 if isinstance(entry, dict)
+        ]
+    return {key: value for key, value in item.items() if value is not None}
+
+
+def _hex_to_int(value: Any) -> int | None:
+    if isinstance(value, str) and value.startswith("0x"):
+        try:
+            return int(value, 16)
+        except ValueError:
+            return None
+    return None
 
 
 async def evm_transfers(request: Request) -> JSONResponse:
@@ -2291,25 +2370,18 @@ async def evm_transfers(request: Request) -> JSONResponse:
     auth_error = _require_machine_token(request)
     if auth_error:
         return _json_error(auth_error, 401)
-    ip = _extract_request_ip(request) or "unknown"
-    now = time.monotonic()
-    window = _EVM_TRANSFER_RATE.setdefault(ip, deque())
-    while window and window[0] < now - 60:
-        window.popleft()
-    if len(window) >= 60:
-        return _json_error("Transfer history rate limit exceeded", 429)
-    window.append(now)
     network = str(request.path_params.get("network", "")).lower()
     if network not in {"ethereum", "base", "robinhood"}:
         return _json_error("Unsupported transfer network", 400)
     address = request.query_params.get("address", "")
     if not re.fullmatch(r"0x[a-fA-F0-9]{40}", address):
         return _json_error("address must be a 20-byte EVM address", 400)
+    address = address.lower()
     direction = request.query_params.get("direction", "outgoing")
     if direction not in {"outgoing", "incoming"}:
         return _json_error("direction must be outgoing or incoming", 400)
     try:
-        page_size = int(request.query_params.get("page_size", "50"))
+        page_size = int(request.query_params.get("page_size", "20"))
     except ValueError:
         return _json_error("page_size must be an integer", 400)
     if not 1 <= page_size <= 100:
@@ -2317,18 +2389,39 @@ async def evm_transfers(request: Request) -> JSONResponse:
     page_key = request.query_params.get("page_key", "")
     if page_key and (len(page_key) > 2048 or not re.fullmatch(r"[A-Za-z0-9_+=/.-]+", page_key)):
         return _json_error("Invalid page_key", 400)
+    include_nfts = request.query_params.get("include_nfts", "") in {"1", "true"}
+
+    cache_key = (network, address, direction, page_key, page_size, include_nfts)
+    cached = _TRANSFER_CACHE.get(cache_key)
+    if cached and time.monotonic() - cached[0] < _TRANSFER_CACHE_TTL:
+        return JSONResponse(cached[1])
+    budget_error = _transfer_budget_error(address)
+    if budget_error:
+        message, retry_after = budget_error
+        response = _json_error(message, 429)
+        response.headers["Retry-After"] = str(retry_after)
+        return response
+
     try:
         _, rpc_url = _resolve_evm_rpc_url("alchemy", network)
     except RuntimeError as exc:
         return _json_error(str(exc), 503)
+    # Alchemy rejects the "internal" category on Robinhood Chain. NFTs are opt-in
+    # because airdropped NFT spam would otherwise crowd real activity off the page.
+    categories = ["external", "erc20"]
+    if network != "robinhood":
+        categories.insert(1, "internal")
+    if include_nfts:
+        categories += ["erc721", "erc1155"]
     params: dict[str, Any] = {
         "fromBlock": "0x0",
         "toBlock": "latest",
-        "category": ["external", "internal", "erc20", "erc721", "erc1155"],
+        "category": categories,
         "withMetadata": True,
         "maxCount": hex(page_size),
         "order": "desc",
-        "excludeZeroValue": False,
+        # Zero-value transfers are mostly address-poisoning spam.
+        "excludeZeroValue": True,
         "fromAddress" if direction == "outgoing" else "toAddress": address,
     }
     if page_key:
@@ -2340,18 +2433,22 @@ async def evm_transfers(request: Request) -> JSONResponse:
         )
     except httpx.HTTPError:
         return _json_error("Alchemy transfer lookup failed", 502)
-    if status_code != 200 or not isinstance(payload, dict) or "error" in payload:
+    if status_code != 200 or not isinstance(payload, dict) or payload.get("error"):
         return _json_error("Alchemy transfer lookup failed", 502)
     result = payload.get("result")
     if not isinstance(result, dict) or not isinstance(result.get("transfers"), list):
         return _json_error("Invalid Alchemy transfer response", 502)
-    return JSONResponse({
+    data = {
         "network": network,
-        "address": address.lower(),
+        "address": address,
         "direction": direction,
-        "transfers": result["transfers"],
+        "transfers": [_compact_transfer(item) for item in result["transfers"] if isinstance(item, dict)],
         "page_key": result.get("pageKey"),
-    })
+    }
+    if len(_TRANSFER_CACHE) >= 512:
+        _TRANSFER_CACHE.clear()
+    _TRANSFER_CACHE[cache_key] = (time.monotonic(), data)
+    return JSONResponse(data)
 
 
 routes = [

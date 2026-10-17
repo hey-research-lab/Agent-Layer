@@ -197,12 +197,29 @@ curl "http://localhost:8000/v1/evm/rpc/ethereum?provider=alchemy" \
 ```
 
 EVM transfer history uses `address=0x...`, `direction=outgoing|incoming`,
-`page_size=1..100` (default 50), and the optional opaque `page_key` returned by
-Alchemy. Each call fetches one page only. It includes native, internal, ERC-20,
-ERC-721, and ERC-1155 movements. It is not a complete index of contract calls or
-failed transactions. The gateway does not persist wallet addresses or transfers.
-The endpoint applies a per-IP limit of 60 requests per minute in each gateway
-process; production ingress should also enforce its own limits.
+`page_size=1..100` (default 20), `include_nfts=1` (optional), and the optional
+opaque `page_key` returned by Alchemy. Each call fetches one page only and returns
+compact transfer objects. `value` is Alchemy's display float; use `raw_value`
+(exact integer string) with `decimals` for accounting. ERC-1155 transfers carry an
+`erc1155` list of `{token_id, value}`. It includes native, internal (not on Robinhood), and
+ERC-20 movements, plus ERC-721/ERC-1155 with `include_nfts=1`. Zero-value
+transfers (mostly address-poisoning spam) are excluded. It is not a complete index
+of contract calls or failed transactions. The gateway does not persist wallet
+addresses or transfers.
+
+Each Alchemy call costs about 150 CU and shares the key with balances and
+broadcasts, so the route is bounded by an in-memory budget per gateway process.
+Identical requests are served from cache and do not count:
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `EVM_TRANSFERS_CACHE_TTL_SECONDS` | `60` | Page cache lifetime |
+| `EVM_TRANSFERS_PER_ADDRESS_PER_MIN` | `20` | Stops a runaway loop on one wallet |
+| `EVM_TRANSFERS_MAX_PER_MIN` | `120` | Burst cap across all addresses |
+| `EVM_TRANSFERS_MAX_PER_DAY` | `20000` | Hard daily cap (~3M CU) across all addresses |
+
+Over a limit the route returns `429` with `Retry-After`. The counters are per
+process and reset on restart; with several replicas the effective caps multiply.
 
 For machine JSON-RPC clients that cannot set a bearer header, the protected EVM RPC route also accepts `?token=<PROVIDER_GATEWAY_BEARER_TOKEN>`.
 
