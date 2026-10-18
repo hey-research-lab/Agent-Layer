@@ -30,6 +30,29 @@ npm run preview
 
 The production-ready static build is generated in `dist/`.
 
+## Agent-facing website responses
+
+Vercel Routing Middleware in `middleware.js` serves Markdown from the same page
+URL when a client prefers `Accept: text/markdown`. Browser requests continue to
+use the prerendered HTML. Both representations include `Vary: Accept`. Unknown
+page URLs requested as Markdown return HTTP 404 with a Markdown body and links
+to the docs and sitemap. Unknown `/api/*` URLs return structured JSON errors.
+
+`/openapi.json` documents the website's onboarding API only. It does not
+describe the local wallet runtime or the separate hosted MCP services. Existing
+onboarding errors retain their `error` code and `message` and now include a
+`hint` with a next step. `/skill.md` and `/sitemap.xml` remain public files.
+
+After deployment, verify the final status, headers, and body for both variants:
+
+```bash
+curl -sS -L -i -H 'Accept: text/markdown' https://www.agent-layer.tech/
+curl -sS -L -i -H 'Accept: text/html' https://www.agent-layer.tech/
+curl -sS -L -i -H 'Accept: text/markdown' https://www.agent-layer.tech/a-page-that-does-not-exist
+curl -sS -L -i https://www.agent-layer.tech/openapi.json
+curl -sS -L -i https://www.agent-layer.tech/api/a-route-that-does-not-exist
+```
+
 ## Vercel Deployment
 
 The repository already includes `vercel.json` with explicit settings:

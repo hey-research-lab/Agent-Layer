@@ -1,0 +1,130 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AgentLayer Website Onboarding API",
+    "version": "1.0.0",
+    "description": "Website onboarding endpoints. The local AgentLayer wallet and the hosted MCP services have separate interfaces. Authenticated requests use the website's Better Auth session cookie; invite binding uses a bearer invite."
+  },
+  "servers": [{ "url": "https://www.agent-layer.tech" }],
+  "paths": {
+    "/api/onboarding/providers": {
+      "get": {
+        "summary": "List configured social sign-in providers",
+        "operationId": "getOnboardingProviders",
+        "responses": {
+          "200": {
+            "description": "Configured providers",
+            "content": { "application/json": { "schema": {
+              "type": "object", "required": ["ok", "providers"],
+              "properties": { "ok": { "const": true }, "providers": { "type": "array", "items": { "type": "string", "enum": ["github", "x"] } } }
+            } } }
+          },
+          "405": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/onboarding/session": {
+      "get": {
+        "summary": "Get the current website session",
+        "operationId": "getOnboardingSession",
+        "responses": {
+          "200": {
+            "description": "Session state, including an unauthenticated state",
+            "content": { "application/json": { "schema": {
+              "type": "object", "required": ["ok", "authenticated", "user", "providers"],
+              "properties": {
+                "ok": { "const": true }, "authenticated": { "type": "boolean" },
+                "user": { "oneOf": [{ "type": "null" }, { "type": "object", "required": ["id", "name", "image"], "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "image": { "type": ["string", "null"] } } }] },
+                "providers": { "type": "array", "items": { "type": "string", "enum": ["github", "x"] } }
+              }
+            } } }
+          },
+          "405": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/onboarding/claim-invite": {
+      "post": {
+        "summary": "Claim a welcome invite using a connected social account",
+        "operationId": "claimOnboardingInvite",
+        "security": [{ "websiteSession": [] }],
+        "requestBody": { "description": "Optional when exactly one supported social provider is connected.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProviderRequest" } } } },
+        "responses": {
+          "201": {
+            "description": "Invite issued",
+            "content": { "application/json": { "schema": {
+              "allOf": [{ "$ref": "#/components/schemas/InviteResponse" }, { "type": "object", "required": ["eligible", "provider"], "properties": { "eligible": { "const": true }, "provider": { "type": "string", "enum": ["github", "x"] } } }]
+            } } }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "405": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "413": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/onboarding/replace-invite": {
+      "post": {
+        "summary": "Replace an invite for the authenticated user",
+        "operationId": "replaceOnboardingInvite",
+        "security": [{ "websiteSession": [] }],
+        "requestBody": { "description": "Optional; provider is currently ignored by the replacement operation.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProviderRequest" } } } },
+        "responses": {
+          "200": { "description": "Replacement invite", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InviteResponse" } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "405": { "$ref": "#/components/responses/Error" },
+          "413": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/onboarding/bind-wallet": {
+      "post": {
+        "summary": "Bind a Base wallet address to an invite",
+        "operationId": "bindOnboardingWallet",
+        "security": [{ "inviteBearer": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": {
+          "type": "object", "required": ["address"], "properties": { "address": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$", "description": "Base EVM wallet address" } }
+        } } } },
+        "responses": {
+          "200": { "description": "Wallet bound", "content": { "application/json": { "schema": {
+            "type": "object", "required": ["ok", "status", "network", "address"],
+            "properties": { "ok": { "const": true }, "status": { "type": "string", "enum": ["bound", "already_bound"] }, "network": { "const": "base" }, "address": { "type": "string" } }
+          } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "405": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "410": { "$ref": "#/components/responses/Error" },
+          "413": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "websiteSession": { "type": "apiKey", "in": "cookie", "name": "__Secure-better-auth.session_token", "description": "Website session managed by Better Auth. Local HTTP development uses the unprefixed better-auth.session_token cookie." },
+      "inviteBearer": { "type": "http", "scheme": "bearer", "description": "Single invite returned by claim-invite or replace-invite." }
+    },
+    "schemas": {
+      "ProviderRequest": { "type": "object", "properties": { "provider": { "type": "string", "enum": ["github", "x"], "description": "Connected social provider. Required when more than one is connected." } } },
+      "InviteResponse": { "type": "object", "required": ["ok", "invite", "expiresAt"], "properties": {
+        "ok": { "const": true }, "invite": { "type": "string", "description": "Secret invite; do not log or publish." }, "expiresAt": { "type": "string", "format": "date-time" }
+      } },
+      "ApiError": { "type": "object", "required": ["ok", "error", "message", "hint"], "properties": {
+        "ok": { "const": false }, "error": { "type": "string", "description": "Stable machine-readable error code." },
+        "message": { "type": "string" }, "hint": { "type": "string", "description": "Suggested next step." }
+      } }
+    },
+    "responses": {
+      "Error": { "description": "Structured API error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } }
+    }
+  }
+}

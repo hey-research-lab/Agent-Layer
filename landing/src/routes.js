@@ -5,7 +5,7 @@ export const DEFAULT_DESCRIPTION = 'AgentLayer is wallet for agents, like OpenCl
 export const ROUTES = {
   home: {
     path: '/',
-    title: 'AgentLayer | Wallet for Agents',
+    title: 'AgentLayer Agent Wallet | Wallet for AI Agents',
     description: DEFAULT_DESCRIPTION,
   },
   wallet: {
