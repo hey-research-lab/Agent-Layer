@@ -27,6 +27,9 @@ def main() -> None:
 
     env = dict(os.environ)
     env["OPENCLAW_HOME"] = str(temp_root)
+    runtime_python = repo_root / "agent-wallet" / ".runtime-venv" / "bin" / "python"
+    if runtime_python.exists():
+        env["OPENCLAW_AGENT_WALLET_PYTHON"] = str(runtime_python)
     env["npm_config_cache"] = str(temp_root / "npm-cache")
     env["AGENT_WALLET_BOOT_KEY"] = "test-boot-key-for-npm-installer"
     env["AGENT_WALLET_MASTER_KEY"] = "test-master-key-for-npm-installer"
@@ -62,9 +65,9 @@ def main() -> None:
         ],
         capture_output=True,
         text=True,
-        check=True,
         env=env,
     )
+    assert result.returncode == 0, (result.stdout, result.stderr)
     payload = json.loads(result.stdout)
     assert payload["ok"] is True
     assert payload["configured"] is False
@@ -92,6 +95,7 @@ def main() -> None:
     ]
     assert (runtime_root / ".openclaw" / "extensions" / "agent-wallet").exists()
     assert (runtime_root / "codex" / "plugins" / "agent-wallet" / ".codex-plugin" / "plugin.json").exists()
+    assert (runtime_root / "cursor" / "plugins" / "agent-wallet" / ".cursor-plugin" / "plugin.json").exists()
     assert (runtime_root / "claude-code" / "plugins" / "agent-wallet" / ".mcp.json").exists()
     assert (runtime_root / "codex" / "plugins" / "agent-wallet" / "skills" / "wallet-sol" / "SKILL.md").exists()
     assert (runtime_root / "hermes" / "plugins" / "agent_wallet" / "plugin.yaml").exists()

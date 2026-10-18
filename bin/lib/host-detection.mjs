@@ -5,13 +5,17 @@ import path from "node:path";
 export const HOST_NAMES = Object.freeze([
   "openclaw",
   "codex",
+  "cursor",
   "claude-code",
   "hermes",
 ]);
 
+const AUTO_ENROLL_ON_EXISTING_RUNTIME = Object.freeze(["cursor"]);
+
 const HOST_ALIASES = Object.freeze({
   openclaw: "openclaw",
   codex: "codex",
+  cursor: "cursor",
   claude: "claude-code",
   "claude-code": "claude-code",
   claudecode: "claude-code",
@@ -62,6 +66,7 @@ export function detectHosts({
   const home = env.HOME || os.homedir();
   const openclawHome = path.resolve(expandHome(env.OPENCLAW_HOME || "~/.openclaw", env));
   const codexHome = path.resolve(expandHome(env.CODEX_HOME || "~/.codex", env));
+  const cursorHome = path.resolve(expandHome(env.CURSOR_HOME || "~/.cursor", env));
   const hermesHome = path.resolve(expandHome(env.HERMES_HOME || "~/.hermes", env));
   const claudeHome = path.resolve(expandHome(env.CLAUDE_CONFIG_DIR || "~/.claude", env));
 
@@ -79,6 +84,21 @@ export function detectHosts({
       "Codex",
       "codex",
       [path.join(codexHome, "config.toml")],
+      commandPath,
+      exists,
+    ),
+    detectedHost(
+      "cursor",
+      "Cursor",
+      "cursor",
+      [
+        path.join(cursorHome, "mcp.json"),
+        path.join(cursorHome, "plugins", "local"),
+        path.join(home, "Library", "Application Support", "Cursor", "User", "settings.json"),
+        path.join(home, "Applications", "Cursor.app"),
+        path.join(home, ".local", "share", "applications", "cursor.desktop"),
+        ...(env.LOCALAPPDATA ? [path.join(env.LOCALAPPDATA, "Programs", "Cursor", "Cursor.exe")] : []),
+      ],
       commandPath,
       exists,
     ),
@@ -190,7 +210,10 @@ export function buildInstallPlan({
     selected = parseHostSet(hostValues, { detected, managed });
     selectionReason = "explicit";
   } else if (runtimeInstalled) {
-    selected = new Set(managed);
+    // Existing installs never enroll newly detected hosts, except ones added
+    // after the runtime shipped (e.g. Cursor) so current users pick them up.
+    const autoEnrolled = detected.filter((name) => AUTO_ENROLL_ON_EXISTING_RUNTIME.includes(name));
+    selected = new Set([...managed, ...autoEnrolled]);
     selectionReason = "existing_runtime_managed_only";
   } else {
     selected = new Set(detected);

@@ -14,9 +14,14 @@ npx --yes @agentlayer.tech/wallet@latest install
 It works with:
 
 - Codex
+- Cursor
 - Claude Code
 - OpenClaw
 - Hermes
+
+The installer detects Cursor and installs its local plugin alongside the
+shared runtime. The package is at
+[`cursor/plugins/agent-wallet/`](cursor/plugins/agent-wallet/).
 
 You need:
 
@@ -66,6 +71,7 @@ Supported host names are:
 
 ```text
 codex
+cursor
 claude-code
 openclaw
 hermes
@@ -116,8 +122,8 @@ wallet doctor
 ## Universal local MCP
 
 Any MCP client that supports the standard local `stdio` transport can use the
-same wallet runtime, without installing a Codex, Claude Code, OpenClaw, or
-Hermes plugin. Install the runtime, then print a ready-to-paste MCP config:
+same wallet runtime without installing a Codex, Cursor, Claude Code, OpenClaw,
+or Hermes plugin. Install the runtime, then print a ready-to-paste MCP config:
 
 ```bash
 npx --yes @agentlayer.tech/wallet@latest install --yes --runtime-only
@@ -126,7 +132,7 @@ npx --yes @agentlayer.tech/wallet@latest mcp config
 
 The generated config starts a local process at the stable
 `agent-wallet-runtime/current` path. It exposes the same wallet tools as the
-Codex and Claude Code bridges. Transaction policy, preview/prepare/execute,
+Codex, Cursor, and Claude Code bridges. Transaction policy, preview/prepare/execute,
 and approval checks remain enforced by the shared Python wallet runtime.
 
 For clients that ask for an executable path instead of JSON, use:

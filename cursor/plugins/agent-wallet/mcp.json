@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "agent-wallet": {
+      "type": "stdio",
+      "command": "sh",
+      "args": [
+        "${CURSOR_PLUGIN_ROOT}/scripts/run_mcp.sh"
+      ],
+      "env": {
+        "AGENT_WALLET_HOST": "cursor",
+        "FASTMCP_SHOW_SERVER_BANNER": "false",
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    }
+  }
+}

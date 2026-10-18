@@ -1,0 +1,14 @@
+{
+  "name": "agent-wallet",
+  "version": "0.1.123",
+  "description": "Connect Cursor to your existing local AgentLayer wallet runtime for Solana and EVM. The plugin does not create a wallet.",
+  "author": {
+    "name": "AgentLayer"
+  },
+  "homepage": "https://github.com/lopushok9/Agent-Layer",
+  "repository": "https://github.com/lopushok9/Agent-Layer",
+  "license": "MIT",
+  "keywords": ["wallet", "solana", "evm", "agentlayer", "mcp"],
+  "skills": "./skills/",
+  "mcpServers": "./mcp.json"
+}

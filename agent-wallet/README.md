@@ -52,7 +52,7 @@ It provides:
 ## Universal local MCP
 
 The runtime can also be used directly by any MCP client with `stdio` support;
-this is separate from the Codex, Claude Code, OpenClaw, and Hermes bridges.
+this is separate from the Codex, Cursor, Claude Code, OpenClaw, and Hermes bridges.
 
 ```bash
 wallet mcp config  # prints a ready-to-paste mcpServers JSON object
@@ -61,7 +61,7 @@ wallet mcp path    # prints the stable local launcher path
 ```
 
 The universal MCP exposes the same tool set and calls the same adapter as the
-Codex and Claude Code bridges. It does not carry secrets in its generated
+Codex, Cursor, and Claude Code bridges. It does not carry secrets in its generated
 config, and all signing and approval policy remains in this Python backend.
 
 ## Hermes integration
@@ -178,7 +178,7 @@ npx @agentlayer.tech/wallet install --yes --hosts codex,claude-code
 npx @agentlayer.tech/wallet detect --json
 ```
 
-It detects OpenClaw, Codex, Claude Code, and Hermes before installation. The
+It detects OpenClaw, Codex, Cursor, Claude Code, and Hermes before installation. The
 direct `setup.sh`/Python path retains its OpenClaw-oriented default for
 backward compatibility; the npm CLI passes `--no-configure-openclaw` and lets
 the selected OpenClaw host adapter own `openclaw.json`.

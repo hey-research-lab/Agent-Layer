@@ -34,6 +34,7 @@ INCLUDED_TOP_LEVEL_DIRS = [
     "bin",
     "claude-code",
     "codex",
+    "cursor",
     "connectors",
     "hermes",
     "mcp",

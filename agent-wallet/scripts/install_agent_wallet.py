@@ -34,6 +34,7 @@ INCLUDED_RUNTIME_ROOT_FILES = [
 INCLUDED_RUNTIME_TOP_LEVEL_DIRS = [
     "claude-code",
     "codex",
+    "cursor",
     ".openclaw",
     "agent-wallet",
     "agent-a2a-gateway",

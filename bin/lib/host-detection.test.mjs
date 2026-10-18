@@ -9,6 +9,7 @@ import {
 const detections = [
   { name: "openclaw", detected: false },
   { name: "codex", detected: true },
+  { name: "cursor", detected: false },
   { name: "claude-code", detected: true },
   { name: "hermes", detected: false },
 ];
@@ -35,6 +36,38 @@ test("existing installs select managed hosts and never newly detected hosts", ()
   assert.equal(plan.selection_reason, "existing_runtime_managed_only");
 });
 
+test("existing installs auto-enroll a newly detected Cursor only", () => {
+  const plan = buildInstallPlan({
+    args: ["--yes"],
+    detections: detections.map((entry) =>
+      entry.name === "cursor" ? { ...entry, detected: true } : entry),
+    managedHosts: ["codex"],
+    runtimeInstalled: true,
+  });
+  assert.deepEqual(plan.selected_hosts, ["codex", "cursor"]);
+  assert.equal(plan.selection_reason, "existing_runtime_managed_only");
+
+  const excluded = buildInstallPlan({
+    args: ["--yes", "--exclude", "cursor"],
+    detections: detections.map((entry) =>
+      entry.name === "cursor" ? { ...entry, detected: true } : entry),
+    managedHosts: ["codex"],
+    runtimeInstalled: true,
+  });
+  assert.deepEqual(excluded.selected_hosts, ["codex"]);
+});
+
+test("managed-only updates do not enroll newly detected hosts", () => {
+  const plan = buildInstallPlan({
+    args: ["--yes", "--managed-only"],
+    detections,
+    managedHosts: ["codex"],
+    runtimeInstalled: true,
+  });
+  assert.deepEqual(plan.selected_hosts, ["codex"]);
+  assert.equal(plan.selection_reason, "managed_only");
+});
+
 test("explicit selection supports aliases and exclusions", () => {
   const plan = buildInstallPlan({
     args: ["--hosts", "all", "--exclude=claude,hermes"],
@@ -42,7 +75,7 @@ test("explicit selection supports aliases and exclusions", () => {
     managedHosts: [],
     runtimeInstalled: false,
   });
-  assert.deepEqual(plan.selected_hosts, ["openclaw", "codex"]);
+  assert.deepEqual(plan.selected_hosts, ["openclaw", "codex", "cursor"]);
   assert.deepEqual(plan.excluded_hosts, ["claude-code", "hermes"]);
 });
 
@@ -98,6 +131,7 @@ test("universal flags are not forwarded to the Python installer", () => {
 test("detection reports CLI and config evidence without using runtime directories", () => {
   const existing = new Set([
     "/tmp/test-home/.codex/config.toml",
+    "/tmp/test-home/.cursor/plugins/local",
     "/tmp/test-home/.claude/settings.json",
   ]);
   const hosts = detectHosts({
@@ -108,6 +142,7 @@ test("detection reports CLI and config evidence without using runtime directorie
   const byName = Object.fromEntries(hosts.map((host) => [host.name, host]));
   assert.equal(byName.openclaw.detected, false);
   assert.equal(byName.codex.detected, true);
+  assert.equal(byName.cursor.detected, true);
   assert.equal(byName["claude-code"].detected, true);
   assert.equal(byName.hermes.detected, true);
   assert.deepEqual(byName.hermes.evidence, [{ type: "cli", path: "/usr/bin/hermes" }]);

@@ -46,13 +46,17 @@ def main() -> None:
             assert source, f"{tool} is required"
             (fake_bin / tool).symlink_to(source)
         node_bin = str(fake_bin / "node")
+        runtime_python = repo_root / "agent-wallet" / ".runtime-venv" / "bin" / "python"
+        test_python = str(runtime_python if runtime_python.exists() else Path(sys.executable))
+        cursor_home = home / ".cursor"
+        (cursor_home / "plugins" / "local").mkdir(parents=True)
 
         env = dict(os.environ)
         env.update(
             {
                 "HOME": str(home),
                 "OPENCLAW_HOME": str(openclaw_home),
-                "OPENCLAW_AGENT_WALLET_PYTHON": sys.executable,
+                "OPENCLAW_AGENT_WALLET_PYTHON": test_python,
                 "OPENCLAW_AGENT_WALLET_UPDATE_CLI_PATH": str(cli),
                 "AGENT_WALLET_BOOT_KEY": "universal-installer-test-boot-key",
                 "AGENT_WALLET_MASTER_KEY": "universal-installer-test-master-key",
@@ -84,7 +88,7 @@ def main() -> None:
             env=env,
         )
         before_payload = json.loads(before.stdout)
-        assert before_payload["detected_hosts"] == ["codex"], before_payload
+        assert before_payload["detected_hosts"] == ["codex", "cursor"], before_payload
         assert before_payload["runtime_installed"] is False, before_payload
 
         installed = subprocess.run(
@@ -96,11 +100,11 @@ def main() -> None:
                 "--skip-python-setup",
                 "--skip-node-setup",
             ],
-            check=True,
             capture_output=True,
             text=True,
             env=env,
         )
+        assert installed.returncode == 0, (installed.stdout, installed.stderr)
         install_payload = json.loads(installed.stdout)
         assert install_payload["configure_openclaw"] is False, install_payload
         assert not (openclaw_home / "openclaw.json").exists()
@@ -109,7 +113,11 @@ def main() -> None:
         runtime_base = openclaw_home / "agent-wallet-runtime"
         registry_path = runtime_base / "integrations.json"
         registry = json.loads(registry_path.read_text(encoding="utf-8"))
-        assert set(registry["integrations"]) == {"codex"}, registry
+        assert set(registry["integrations"]) == {"codex", "cursor"}, registry
+        cursor_plugin = cursor_home / "plugins" / "local" / "agent-wallet"
+        assert (cursor_plugin / ".cursor-plugin" / "plugin.json").is_file()
+        assert (cursor_plugin / "server.py").is_file()
+        assert json.loads((cursor_plugin / ".agentlayer-managed.json").read_text())["manager"] == "agentlayer"
         assert (runtime_base / "current").resolve().name == package_version
 
         provisioned_wallet_files = list((openclaw_home / "users").glob("*/wallets/*"))
@@ -149,7 +157,8 @@ def main() -> None:
         assert update_payload["command"] == "update", update_payload
 
         registry_after = json.loads(registry_path.read_text(encoding="utf-8"))
-        assert set(registry_after["integrations"]) == {"codex"}, registry_after
+        assert set(registry_after["integrations"]) == {"codex", "cursor"}, registry_after
+        assert (cursor_plugin / "server.py").is_file()
         assert not claude_log.exists(), "update attempted to enroll newly detected Claude Code"
         assert not (home / ".claude" / "agentlayer-local").exists()
         assert {path: _sha256(path) for path in protected_files} == hashes_before

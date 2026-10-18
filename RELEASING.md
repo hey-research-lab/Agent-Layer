@@ -38,8 +38,8 @@ VERSION
 ```
 
 Every other manifest (npm `package.json`, `agent-wallet/pyproject.toml`, the
-Python `__version__`, the OpenClaw extension, and the Codex / Claude Code /
-Hermes / WDK EVM manifests) is a *derived* target. Do not edit them by hand —
+Python `__version__`, the OpenClaw extension, and the Codex / Cursor /
+Claude Code / Hermes / WDK EVM manifests) is a *derived* target. Do not edit them by hand —
 stamp them from `VERSION`:
 
 ```bash
@@ -55,7 +55,7 @@ all manifests are stamped from `VERSION`, one tag ships every surface in lockste
 
 ### Local release (install into all frameworks)
 
-To make your own OpenClaw / Codex / Claude Code editors run a freshly bumped
+To make your own OpenClaw / Codex / Cursor / Claude Code editors run a freshly bumped
 version from the working tree (bump → stamp → verify → reinstall everywhere):
 
 ```bash
@@ -201,6 +201,10 @@ wdk-evm-wallet
 bin
 scripts
 mcp
+cursor/plugins/agent-wallet
+codex/plugins/agent-wallet
+claude-code/plugins/agent-wallet
+hermes/plugins/agent_wallet
 setup.sh
 install-from-github.sh
 README.md

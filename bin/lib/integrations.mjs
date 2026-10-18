@@ -23,6 +23,69 @@ function writeJsonAtomic(pathname, value) {
   }
 }
 
+const CURSOR_MANAGED_MARKER = ".agentlayer-managed.json";
+
+export function syncCursorPluginBundle({
+  source,
+  target,
+  packageVersion,
+  force = false,
+  runtimePackageRoot = null,
+  openclawHome = null,
+  defaultOpenclawHome = null,
+}) {
+  if (readJson(path.join(source, ".cursor-plugin", "plugin.json"))?.name !== "agent-wallet") {
+    throw new Error(`Missing AgentLayer Cursor plugin bundle at ${source}`);
+  }
+  const parent = path.dirname(target);
+  fs.mkdirSync(parent, { recursive: true });
+  const staged = path.join(parent, `.agent-wallet-staging-${process.pid}-${Date.now()}`);
+  const backup = path.join(parent, `.agent-wallet-backup-${process.pid}-${Date.now()}`);
+  let oldMoved = false;
+  try {
+    fs.cpSync(source, staged, { recursive: true });
+    const mcpPath = path.join(staged, "mcp.json");
+    const mcp = readJson(mcpPath);
+    const server = mcp?.mcpServers?.["agent-wallet"];
+    if (!server || typeof server !== "object") throw new Error(`Missing Cursor MCP config at ${mcpPath}`);
+    // Cursor plugin-root interpolation is not documented, so pin the launcher
+    // to its absolute installed path and run it through sh (no exec bit needed).
+    server.command = "sh";
+    server.args = [path.join(path.resolve(target), "scripts", "run_mcp.sh")];
+    server.env = { ...(server.env || {}) };
+    if (runtimePackageRoot) server.env.AGENT_WALLET_PACKAGE_ROOT = runtimePackageRoot;
+    if (openclawHome && openclawHome !== defaultOpenclawHome) server.env.OPENCLAW_HOME = openclawHome;
+    fs.writeFileSync(mcpPath, `${JSON.stringify(mcp, null, 2)}\n`);
+    fs.writeFileSync(
+      path.join(staged, CURSOR_MANAGED_MARKER),
+      `${JSON.stringify({ manager: "agentlayer", plugin: "agent-wallet", version: packageVersion })}\n`,
+    );
+    let existing = false;
+    try {
+      fs.lstatSync(target);
+      existing = true;
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    if (existing) {
+      const marker = readJson(path.join(target, CURSOR_MANAGED_MARKER));
+      if (!force && (marker?.manager !== "agentlayer" || marker?.plugin !== "agent-wallet")) {
+        throw new Error(`${target} exists and is not managed by AgentLayer. Pass --force to replace it.`);
+      }
+      fs.renameSync(target, backup);
+      oldMoved = true;
+    }
+    fs.renameSync(staged, target);
+    if (oldMoved) fs.rmSync(backup, { recursive: true, force: true });
+    return { target, repaired: oldMoved, restart_required: true };
+  } catch (error) {
+    if (oldMoved && !fs.existsSync(target)) fs.renameSync(backup, target);
+    throw error;
+  } finally {
+    fs.rmSync(staged, { recursive: true, force: true });
+  }
+}
+
 export function createIntegrationManager({ runtimeBase, packageVersion, activeVersion }) {
   const registryPath = path.join(runtimeBase, "integrations.json");
 
@@ -178,6 +241,7 @@ export function createHostIntegrationManager({
   openclawHome,
   hermesHome,
   codexHome,
+  cursorPluginRoot,
   codexPluginRoot,
   codexMarketplacePath,
   claudeMarketplaceDir,
@@ -309,6 +373,13 @@ export function createHostIntegrationManager({
       cache_root: path.resolve(expandHome(env.AGENT_WALLET_CLAUDE_CODE_CACHE_ROOT || "~/.claude/plugins/cache")),
       adopted_legacy_install: true,
     });
+  }
+
+  function adoptCursor() {
+    const pluginTarget = path.join(cursorPluginRoot, "agent-wallet");
+    const marker = readJson(path.join(pluginTarget, CURSOR_MANAGED_MARKER));
+    if (marker?.manager !== "agentlayer" || marker?.plugin !== "agent-wallet") return null;
+    return registry.record("cursor", { plugin_target: pluginTarget, adopted_legacy_install: true });
   }
 
   function runHostRefresh(command, args, commandEnv = env) {
@@ -469,12 +540,30 @@ export function createHostIntegrationManager({
     };
   }
 
+  function refreshCursor() {
+    const entry = registry.managed("cursor") || adoptCursor();
+    if (!entry) return null;
+    const pluginTarget = path.resolve(expandHome(entry.plugin_target || path.join(cursorPluginRoot, "agent-wallet")));
+    const source = path.join(currentRuntimePath, "cursor", "plugins", "agent-wallet");
+    const synced = syncCursorPluginBundle({
+      source,
+      target: pluginTarget,
+      packageVersion,
+      runtimePackageRoot: path.join(currentRuntimePath, "agent-wallet"),
+      openclawHome,
+      defaultOpenclawHome: path.resolve(expandHome("~/.openclaw")),
+    });
+    registry.record("cursor", { ...entry, plugin_target: pluginTarget, restart_required: true });
+    return { name: "cursor", attempted: true, ok: true, ...synced };
+  }
+
   function refreshAll(names = null) {
     const selected = names ? new Set(names) : null;
     const refreshers = {
       openclaw: refreshOpenclaw,
       hermes: refreshHermes,
       codex: refreshCodex,
+      cursor: refreshCursor,
       "claude-code": refreshClaudeCode,
     };
     return registry.refreshAll(

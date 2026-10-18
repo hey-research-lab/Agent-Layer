@@ -28,6 +28,7 @@ export const TARGETS = [
   { file: "agent-wallet/openclaw.plugin.json", kind: "json" },
   { file: ".openclaw/extensions/agent-wallet/openclaw.plugin.json", kind: "json" },
   { file: "codex/plugins/agent-wallet/.codex-plugin/plugin.json", kind: "json" },
+  { file: "cursor/plugins/agent-wallet/.cursor-plugin/plugin.json", kind: "json" },
   { file: "claude-code/plugins/agent-wallet/.claude-plugin/plugin.json", kind: "json" },
   { file: "hermes/plugins/agent_wallet/plugin.yaml", kind: "yaml" },
   { file: "wdk-evm-wallet/package.json", kind: "json" },

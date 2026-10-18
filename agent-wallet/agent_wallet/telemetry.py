@@ -1,7 +1,7 @@
 """Anonymous, privacy-first adoption telemetry for the AgentLayer wallet.
 
 Why this exists: we want to know how many people use the wallet and through which
-host (Claude Code / Codex / Hermes / OpenClaw) — nothing more. It deliberately
+host (Claude Code / Codex / Cursor / Hermes / OpenClaw) — nothing more. It deliberately
 records NO PII: no wallet addresses, balances, amounts, tx hashes, tool
 arguments, or secrets. Only a random local install id, the host name, the
 invoked tool's registered name, the backend family, the plugin version, and a
@@ -36,7 +36,7 @@ from typing import Any
 from . import __version__
 from .config import DEFAULT_PROVIDER_GATEWAY_URL, resolve_openclaw_home
 
-ALLOWED_HOSTS = {"claude-code", "codex", "hermes", "mcp", "openclaw"}
+ALLOWED_HOSTS = {"claude-code", "codex", "cursor", "hermes", "mcp", "openclaw"}
 
 SPOOL_NAME = "telemetry_spool.jsonl"
 ID_NAME = "telemetry_id"

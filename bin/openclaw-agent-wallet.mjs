@@ -15,7 +15,7 @@ import {
   stripUniversalInstallerArgs,
 } from "./lib/host-detection.mjs";
 import { stopLocalEvmDaemonSync } from "./lib/evm-daemon.mjs";
-import { createHostIntegrationManager, createIntegrationManager } from "./lib/integrations.mjs";
+import { createHostIntegrationManager, createIntegrationManager, syncCursorPluginBundle } from "./lib/integrations.mjs";
 import { createUpdateTransactionManager } from "./lib/update-transaction.mjs";
 
 const cliPath = fileURLToPath(import.meta.url);
@@ -44,6 +44,7 @@ Usage:
   openclaw-agent-wallet detect [--json]
   openclaw-agent-wallet hermes install [options]
   openclaw-agent-wallet codex install [options]
+  openclaw-agent-wallet cursor install [options]
   openclaw-agent-wallet claude-code install [options]
   openclaw-agent-wallet mcp serve
   openclaw-agent-wallet mcp path
@@ -73,6 +74,7 @@ Examples:
   npx @agentlayer.tech/wallet install --yes --invite alw_...
   npx @agentlayer.tech/wallet hermes install --yes
   npx @agentlayer.tech/wallet codex install --yes
+  npx @agentlayer.tech/wallet cursor install --yes
   npx @agentlayer.tech/wallet claude-code install --yes
   wallet mcp config
   wallet mcp serve
@@ -167,7 +169,7 @@ function telemetryInstallId(env = process.env) {
 
 function telemetryHost(host = "", env = process.env) {
   const raw = String(host || env.AGENT_WALLET_HOST || "").trim().toLowerCase();
-  return ["claude-code", "codex", "hermes", "mcp", "openclaw"].includes(raw) ? raw : "unknown";
+  return ["claude-code", "codex", "cursor", "hermes", "mcp", "openclaw"].includes(raw) ? raw : "unknown";
 }
 
 function telemetrySource(env = process.env) {
@@ -431,6 +433,12 @@ function resolveCodexHome(env = process.env) {
   return path.resolve(expandHome(env.CODEX_HOME || "~/.codex"));
 }
 
+function resolveCursorPluginInstallRoot(env = process.env) {
+  return path.resolve(expandHome(
+    env.AGENT_WALLET_CURSOR_PLUGIN_ROOT || path.join(env.CURSOR_HOME || "~/.cursor", "plugins", "local"),
+  ));
+}
+
 function releaseRootFor(version, env = process.env) {
   return path.join(resolveRuntimeBase(env), "releases", version);
 }
@@ -495,6 +503,7 @@ function hostIntegrations(env = process.env) {
     openclawHome: resolveOpenclawHome(env),
     hermesHome: resolveHermesHome(env),
     codexHome: resolveCodexHome(env),
+    cursorPluginRoot: resolveCursorPluginInstallRoot(env),
     codexPluginRoot: resolveCodexPluginInstallRoot(env),
     codexMarketplacePath: resolveCodexMarketplacePath(env),
     claudeMarketplaceDir: resolveClaudeCodeMarketplaceDir(env),
@@ -1442,6 +1451,22 @@ function resolveEditorServerChecks(env = process.env) {
       fix: ok ? "" : "npx @agentlayer.tech/wallet codex install --yes",
     });
   }
+  const cursorEntry = integrations(env).managed("cursor");
+  if (cursorEntry) {
+    const cursorTarget = path.resolve(expandHome(
+      cursorEntry.plugin_target || path.join(resolveCursorPluginInstallRoot(env), "agent-wallet"),
+    ));
+    const manifest = readJsonFile(path.join(cursorTarget, ".cursor-plugin", "plugin.json"));
+    const marker = readJsonFile(path.join(cursorTarget, ".agentlayer-managed.json"));
+    const ok = manifest?.name === "agent-wallet" && marker?.manager === "agentlayer" &&
+      fs.existsSync(path.join(cursorTarget, "server.py"));
+    checks.push({
+      name: "editor:cursor",
+      ok,
+      error: ok ? "" : `Cursor plugin is missing or unmanaged at ${cursorTarget}`,
+      fix: ok ? "" : "npx @agentlayer.tech/wallet cursor install --yes",
+    });
+  }
   return checks;
 }
 
@@ -1764,7 +1789,7 @@ function runEditorHostInstall(name, args, env = process.env) {
     name,
     "install",
     ...(hasFlag(args, "--force") ? ["--force"] : []),
-    ...(!commandPath(binaryName) || hasFlag(args, "--skip-enable") ? ["--skip-enable"] : []),
+    ...(name !== "cursor" && (!commandPath(binaryName) || hasFlag(args, "--skip-enable")) ? ["--skip-enable"] : []),
   ];
   const result = spawnSync(process.execPath, [cliPath, ...hostArgs], {
     cwd: packageRoot,
@@ -2427,6 +2452,20 @@ function resolveClaudeCodePluginSource() {
   throw new Error(`Missing Claude Code plugin bundle. Checked: ${candidates.join(", ")}`);
 }
 
+function resolveCursorPluginSource() {
+  const override = String(process.env.AGENT_WALLET_CURSOR_PLUGIN_SOURCE || "").trim();
+  if (override) return path.resolve(expandHome(override));
+  const currentRoot = logicalCurrentRuntimeRoot();
+  const candidates = [
+    ...(currentRoot ? [path.join(currentRoot, "cursor", "plugins", "agent-wallet")] : []),
+    path.join(packageRoot, "cursor", "plugins", "agent-wallet"),
+  ];
+  for (const source of candidates) {
+    if (fs.existsSync(path.join(source, ".cursor-plugin", "plugin.json"))) return source;
+  }
+  throw new Error(`Missing Cursor plugin bundle. Checked: ${candidates.join(", ")}`);
+}
+
 function resolveCodexPluginInstallRoot(env = process.env) {
   return path.resolve(expandHome(env.AGENT_WALLET_CODEX_PLUGIN_ROOT || "~/plugins"));
 }
@@ -2697,6 +2736,29 @@ function runCodexInstall(args) {
     ),
   );
   return add.skipped || add.ok ? 0 : 1;
+}
+
+function runCursorInstall(args, env = process.env) {
+  const pluginSource = resolveCursorPluginSource();
+  const pluginTarget = path.join(resolveCursorPluginInstallRoot(env), "agent-wallet");
+  const synced = syncCursorPluginBundle({
+    source: pluginSource,
+    target: pluginTarget,
+    packageVersion,
+    force: hasFlag(args, "--force"),
+    runtimePackageRoot: path.join(currentRuntimePath(env), "agent-wallet"),
+    openclawHome: resolveOpenclawHome(env),
+    defaultOpenclawHome: path.resolve(expandHome("~/.openclaw")),
+  });
+  recordManagedIntegration("cursor", { plugin_target: pluginTarget, restart_required: true }, env);
+  console.log(JSON.stringify({
+    ok: true,
+    plugin_source: pluginSource,
+    plugin_target: pluginTarget,
+    ...synced,
+    note: "Restart Cursor or run Developer: Reload Window to activate the plugin.",
+  }, null, 2));
+  return 0;
 }
 
 const CLAUDE_CODE_MARKETPLACE_NAME = "agentlayer-local";
@@ -3218,6 +3280,27 @@ if (command === "claude-code") {
   }
   console.error(`Unknown claude-code command: ${subcommand}`);
   console.error("Run `openclaw-agent-wallet claude-code install --yes` to connect Claude Code.");
+  process.exit(2);
+}
+
+if (command === "cursor") {
+  const subcommand = args[1] || "install";
+  if (subcommand === "install" || subcommand === "setup") {
+    const commandArgs = args.slice(2);
+    process.exit(runWithCliTelemetry(
+      () => runCursorInstall(commandArgs),
+      {
+        startEvent: "plugin_install_start",
+        successEvent: "plugin_install_success",
+        failedEvent: "plugin_install_failed",
+        commandName: "cursor_install",
+        host: "cursor",
+        args: commandArgs,
+      },
+    ));
+  }
+  console.error(`Unknown cursor command: ${subcommand}`);
+  console.error("Run `openclaw-agent-wallet cursor install --yes` to connect Cursor.");
   process.exit(2);
 }
 

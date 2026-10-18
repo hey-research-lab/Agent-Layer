@@ -1,0 +1,16 @@
+{
+  "name": "agentlayer",
+  "owner": {
+    "name": "AgentLayer"
+  },
+  "metadata": {
+    "description": "AgentLayer plugins for Cursor, backed by the local wallet runtime."
+  },
+  "plugins": [
+    {
+      "name": "agent-wallet",
+      "source": "cursor/plugins/agent-wallet",
+      "description": "Use the existing local AgentLayer wallet in Cursor with Solana and EVM tools."
+    }
+  ]
+}

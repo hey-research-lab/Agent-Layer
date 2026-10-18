@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // One-shot local release: bump the canonical version, stamp every manifest,
 // verify consistency, and reinstall the runtime into all local agent frameworks
-// (OpenClaw, Codex, Claude Code, Hermes) so they all run the new version from the
+// (OpenClaw, Codex, Cursor, Claude Code, Hermes) so they all run the new version from the
 // working tree — the same files that get published to npm/ClawHub.
 //
 //   node scripts/release_local.mjs 0.1.34          # bump + stamp + install all
