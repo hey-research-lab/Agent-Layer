@@ -135,6 +135,7 @@ describe('published OpenAPI document', () => {
     assert.match(llms, /npx --yes @agentlayer\.tech\/wallet@latest install/)
     assert.equal(manifest.name, '@agentlayer.tech/wallet')
     assert.equal(manifest.bin.wallet, './bin/openclaw-agent-wallet.mjs')
+    assert.equal(manifest.homepage, 'https://www.agent-layer.tech/')
   })
 
   it('publishes a protocol-correct deprecation policy and discoverable brand metadata', async () => {

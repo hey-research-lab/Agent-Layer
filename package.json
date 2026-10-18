@@ -10,7 +10,7 @@
   "bugs": {
     "url": "https://github.com/lopushok9/Agent-Layer/issues"
   },
-  "homepage": "https://github.com/lopushok9/Agent-Layer#readme",
+  "homepage": "https://www.agent-layer.tech/",
   "bin": {
     "wallet": "./bin/openclaw-agent-wallet.mjs"
   },
