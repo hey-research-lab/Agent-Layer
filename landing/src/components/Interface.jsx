@@ -332,7 +332,7 @@ export const Interface = ({ onInstallClick }) => {
                             ))}
                         </p>
 
-                        <h1 className="hh-title hh-rise" style={{ '--d': '0.18s' }}>Wallet for agents</h1>
+                        <h1 className="hh-title hh-rise" style={{ '--d': '0.18s' }}>AgentLayer Wallet</h1>
 
                         <p className="hh-lede hh-rise" style={{ '--d': '0.26s' }}>
                             Make payments via x402, use stablecoins, swap assets, earn yield with defi and buy tokenized stocks across the most popular chains.

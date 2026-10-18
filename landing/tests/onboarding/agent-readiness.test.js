@@ -66,6 +66,26 @@ describe('agent-facing website responses', () => {
     assert.deepEqual(Object.keys(await missing.json()), ['ok', 'error', 'message', 'hint'])
     assert.equal(middleware(request('/api/onboarding/session')).headers.get('x-middleware-next'), '1')
   })
+
+  it('selects API contract version 1 without changing existing URLs', async () => {
+    const legacy = middleware(request('/api/onboarding/providers'))
+    assert.equal(legacy.headers.get('x-middleware-next'), '1')
+    assert.equal(legacy.headers.get('x-agentlayer-api-version'), '1')
+    assert.match(legacy.headers.get('link'), /rel="deprecation"/)
+
+    const explicit = middleware(new Request('https://www.agent-layer.tech/api/onboarding/providers', {
+      headers: { 'X-AgentLayer-API-Version': '1' },
+    }))
+    assert.equal(explicit.headers.get('x-middleware-next'), '1')
+
+    const unsupported = middleware(new Request('https://www.agent-layer.tech/api/onboarding/providers', {
+      headers: { 'X-AgentLayer-API-Version': '2' },
+    }))
+    assert.equal(unsupported.status, 400)
+    assert.equal(unsupported.headers.get('x-agentlayer-api-version'), '1')
+    assert.equal((await unsupported.json()).error, 'unsupported_api_version')
+    assert.equal(middleware(request('/api/auth/get-session')).headers.get('x-agentlayer-api-version'), null)
+  })
 })
 
 describe('onboarding API errors', () => {
@@ -93,12 +113,41 @@ describe('published OpenAPI document', () => {
     assert.equal(spec.openapi, '3.1.0')
     for (const endpoint of ['providers', 'session', 'claim-invite', 'replace-invite', 'bind-wallet']) {
       assert.ok(spec.paths[`/api/onboarding/${endpoint}`])
+      assert.equal(spec.paths[`/api/onboarding/${endpoint}`].parameters[0].$ref, '#/components/parameters/ApiVersion')
       assert.ok(await readFile(path.join(root, `api/onboarding/${endpoint}.js`), 'utf8'))
     }
+    assert.equal(spec.components.parameters.ApiVersion.name, 'X-AgentLayer-API-Version')
+    assert.equal(spec.components.parameters.ApiVersion.schema.default, '1')
+    assert.match(spec.externalDocs.url, /api-policy\.md$/)
     assert.equal(spec.paths['/api/onboarding/bind-wallet'].post.responses['200'].content['application/json'].schema.properties.status.type, 'string')
   })
 
   it('uses the updated brand in homepage metadata', () => {
     assert.match(ROUTES.home.title, /AgentLayer Agent Wallet/)
+  })
+
+  it('publishes when-to-use guidance and the official npm CLI in llms.txt', async () => {
+    const llms = await readFile(path.join(root, 'public/llms.txt'), 'utf8')
+    const manifest = JSON.parse(await readFile(path.join(root, '../package.json'), 'utf8'))
+    assert.match(llms, /^# AgentLayer Agent Wallet\n\n> /)
+    assert.match(llms, /## When to use AgentLayer/)
+    assert.match(llms, /\[Official npm CLI\]\(https:\/\/www\.npmjs\.com\/package\/@agentlayer\.tech\/wallet\)/)
+    assert.match(llms, /npx --yes @agentlayer\.tech\/wallet@latest install/)
+    assert.equal(manifest.name, '@agentlayer.tech/wallet')
+    assert.equal(manifest.bin.wallet, './bin/openclaw-agent-wallet.mjs')
+  })
+
+  it('publishes a protocol-correct deprecation policy and discoverable brand metadata', async () => {
+    const policy = await readFile(path.join(root, 'public/api-policy.md'), 'utf8')
+    const html = await readFile(path.join(root, 'index.html'), 'utf8')
+    const manifest = JSON.parse(await readFile(path.join(root, 'public/site.webmanifest'), 'utf8'))
+    const structuredData = JSON.parse(html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1])
+    assert.match(policy, /Deprecation: @<Unix timestamp>/)
+    assert.match(policy, /Sunset/)
+    assert.match(html, /rel="describedby" href="https:\/\/www\.agent-layer\.tech\/llms\.txt"/)
+    assert.equal(structuredData['@graph'].find((item) => item['@type'] === 'SoftwareApplication').name, 'AgentLayer Agent Wallet')
+    assert.equal(manifest.name, 'AgentLayer')
+    assert.match(manifest.description, /AgentLayer Agent Wallet/)
+    assert.match(html, /AgentLayer Agent Wallet is a local wallet/)
   })
 })

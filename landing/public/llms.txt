@@ -1,0 +1,23 @@
+# AgentLayer Agent Wallet
+
+> AgentLayer is a local wallet for AI agents. It connects supported hosts to balances, payments, swaps, DeFi, and x402 services while keeping signing and wallet policy on the user's machine.
+
+Use the local wallet when the user wants their own agent to inspect a portfolio, send or receive assets, swap, use DeFi, or pay for an x402 service. Read-only wallet operations can be performed directly; any operation moving funds must follow the wallet's preview, policy, and approval flow. Use the hosted x402 MCP only when a remote MCP connection is needed; it has a narrower product surface than the local wallet.
+
+## When to use AgentLayer
+
+- [Agent Wallet](https://www.agent-layer.tech/wallet): Use for a user's local wallet on Solana, Base, or Ethereum, including balances, transfers, swaps, and DeFi. Install with `npx --yes @agentlayer.tech/wallet@latest install`; then use the wallet tools exposed in the connected agent host.
+- [Hosted x402 MCP](https://x402.agent-layer.tech/mcp): Use for a cloud agent that needs to discover and pay for x402 services through a remote MCP connection. Connect this URL in an MCP host that supports remote servers and OAuth.
+- [Onboarding](https://www.agent-layer.tech/onboard): Use when a user wants to connect GitHub or X and claim a welcome invite for the local wallet.
+
+## CLI and integration
+
+- [Official npm CLI](https://www.npmjs.com/package/@agentlayer.tech/wallet): The published `wallet` command supports `status`, `doctor`, `detect --json`, `update --yes`, and `mcp config`. Use `npx --yes @agentlayer.tech/wallet@latest install` for first-time installation.
+- [Agent skill](https://www.agent-layer.tech/skill.md): Prerequisites, install flow, and guidance for agents helping a user set up AgentLayer.
+- [Documentation](https://docs.agent-layer.tech/): Product capabilities and setup details.
+
+## Website API
+
+- [OpenAPI](https://www.agent-layer.tech/openapi.json): Contract for the website's onboarding endpoints only; the wallet runtime and hosted MCP are separate interfaces.
+- [API policy](https://www.agent-layer.tech/api-policy.md): API version header and deprecation signals.
+- [Sitemap](https://www.agent-layer.tech/sitemap.xml): Public pages on this site.

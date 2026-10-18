@@ -15,6 +15,7 @@ const SITE_LINKS = [
   '[Documentation](https://docs.agent-layer.tech/)',
   '[Sitemap](https://www.agent-layer.tech/sitemap.xml)',
 ]
+const API_POLICY_LINK = '<https://www.agent-layer.tech/api-policy.md>; rel="deprecation"; type="text/markdown"'
 
 function qualityFor(accept, type) {
   let best = { specificity: -1, quality: 0 }
@@ -63,7 +64,20 @@ export default function middleware(request) {
   const isRead = request.method === 'GET' || request.method === 'HEAD'
 
   if (pathname.startsWith('/api/')) {
-    if (pathname.startsWith('/api/auth/') || PUBLIC_API_PATHS.has(pathname)) return next()
+    if (pathname === '/api/auth' || pathname.startsWith('/api/auth/')) return next()
+    const version = request.headers.get('x-agentlayer-api-version') || '1'
+    if (version !== '1') {
+      return new Response(JSON.stringify({
+        ok: false,
+        error: 'unsupported_api_version',
+        message: `API version ${version} is not supported.`,
+        hint: 'Use X-AgentLayer-API-Version: 1 or omit the header. See /api-policy.md.',
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-AgentLayer-API-Version': '1', Link: API_POLICY_LINK },
+      })
+    }
+    if (PUBLIC_API_PATHS.has(pathname)) return next({ headers: { 'X-AgentLayer-API-Version': '1', Link: API_POLICY_LINK } })
     return new Response(JSON.stringify({
       ok: false,
       error: 'not_found',
@@ -71,7 +85,7 @@ export default function middleware(request) {
       hint: 'See /openapi.json for the available onboarding API endpoints.',
     }), {
       status: 404,
-      headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
+      headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-AgentLayer-API-Version': '1', Link: API_POLICY_LINK },
     })
   }
 

@@ -43,6 +43,22 @@ describe the local wallet runtime or the separate hosted MCP services. Existing
 onboarding errors retain their `error` code and `message` and now include a
 `hint` with a next step. `/skill.md` and `/sitemap.xml` remain public files.
 
+`/llms.txt` follows the llms.txt format and tells agents when to use the local
+wallet, hosted x402 MCP, and onboarding API. It links the already published
+[`@agentlayer.tech/wallet` CLI](https://www.npmjs.com/package/@agentlayer.tech/wallet)
+and the agent skill. The homepage metadata and main heading name AgentLayer
+Wallet directly, while keeping the existing layout and styling.
+
+Website onboarding endpoints accept the optional `X-AgentLayer-API-Version: 1`
+request header and echo it on responses. Requests without it continue as version
+1; unsupported versions get JSON 400. The [API policy](public/api-policy.md)
+describes deprecation and sunset signals. The Better Auth endpoints have their
+own upstream contract.
+
+No `RateLimit` value is emitted without an enforced quota. A shared limiter
+(such as a configured Vercel WAF rule or durable counter) and an agreed quota
+are needed before publishing remaining-request values and `Retry-After` on 429.
+
 After deployment, verify the final status, headers, and body for both variants:
 
 ```bash
@@ -51,6 +67,10 @@ curl -sS -L -i -H 'Accept: text/html' https://www.agent-layer.tech/
 curl -sS -L -i -H 'Accept: text/markdown' https://www.agent-layer.tech/a-page-that-does-not-exist
 curl -sS -L -i https://www.agent-layer.tech/openapi.json
 curl -sS -L -i https://www.agent-layer.tech/api/a-route-that-does-not-exist
+curl -sS -L -i https://www.agent-layer.tech/llms.txt
+curl -sS -L -i https://www.agent-layer.tech/api-policy.md
+curl -sS -L -i -H 'X-AgentLayer-API-Version: 1' https://www.agent-layer.tech/api/onboarding/providers
+curl -sS -L -i -H 'X-AgentLayer-API-Version: 2' https://www.agent-layer.tech/api/onboarding/providers
 ```
 
 ## Vercel Deployment

@@ -3,14 +3,17 @@
   "info": {
     "title": "AgentLayer Website Onboarding API",
     "version": "1.0.0",
-    "description": "Website onboarding endpoints. The local AgentLayer wallet and the hosted MCP services have separate interfaces. Authenticated requests use the website's Better Auth session cookie; invite binding uses a bearer invite."
+    "description": "Website onboarding endpoints. The local AgentLayer wallet and the hosted MCP services have separate interfaces. Authenticated requests use the website's Better Auth session cookie; invite binding uses a bearer invite. API contract version 1 is selected with X-AgentLayer-API-Version: 1 (or by omitting that header)."
   },
+  "externalDocs": { "description": "API versioning and deprecation policy", "url": "https://www.agent-layer.tech/api-policy.md" },
   "servers": [{ "url": "https://www.agent-layer.tech" }],
   "paths": {
     "/api/onboarding/providers": {
+      "parameters": [{ "$ref": "#/components/parameters/ApiVersion" }],
       "get": {
         "summary": "List configured social sign-in providers",
         "operationId": "getOnboardingProviders",
+        "security": [],
         "responses": {
           "200": {
             "description": "Configured providers",
@@ -19,14 +22,17 @@
               "properties": { "ok": { "const": true }, "providers": { "type": "array", "items": { "type": "string", "enum": ["github", "x"] } } }
             } } }
           },
+          "400": { "$ref": "#/components/responses/Error" },
           "405": { "$ref": "#/components/responses/Error" }
         }
       }
     },
     "/api/onboarding/session": {
+      "parameters": [{ "$ref": "#/components/parameters/ApiVersion" }],
       "get": {
         "summary": "Get the current website session",
         "operationId": "getOnboardingSession",
+        "security": [{ "websiteSession": [] }, {}],
         "responses": {
           "200": {
             "description": "Session state, including an unauthenticated state",
@@ -39,12 +45,14 @@
               }
             } } }
           },
+          "400": { "$ref": "#/components/responses/Error" },
           "405": { "$ref": "#/components/responses/Error" },
           "500": { "$ref": "#/components/responses/Error" }
         }
       }
     },
     "/api/onboarding/claim-invite": {
+      "parameters": [{ "$ref": "#/components/parameters/ApiVersion" }],
       "post": {
         "summary": "Claim a welcome invite using a connected social account",
         "operationId": "claimOnboardingInvite",
@@ -67,6 +75,7 @@
       }
     },
     "/api/onboarding/replace-invite": {
+      "parameters": [{ "$ref": "#/components/parameters/ApiVersion" }],
       "post": {
         "summary": "Replace an invite for the authenticated user",
         "operationId": "replaceOnboardingInvite",
@@ -84,6 +93,7 @@
       }
     },
     "/api/onboarding/bind-wallet": {
+      "parameters": [{ "$ref": "#/components/parameters/ApiVersion" }],
       "post": {
         "summary": "Bind a Base wallet address to an invite",
         "operationId": "bindOnboardingWallet",
@@ -109,6 +119,15 @@
     }
   },
   "components": {
+    "parameters": {
+      "ApiVersion": {
+        "name": "X-AgentLayer-API-Version",
+        "in": "header",
+        "required": false,
+        "description": "Website onboarding API contract version. Omit for version 1; unsupported versions return JSON 400 with error code unsupported_api_version. Responses echo the selected version. See /api-policy.md for deprecation signals.",
+        "schema": { "type": "string", "enum": ["1"], "default": "1" }
+      }
+    },
     "securitySchemes": {
       "websiteSession": { "type": "apiKey", "in": "cookie", "name": "__Secure-better-auth.session_token", "description": "Website session managed by Better Auth. Local HTTP development uses the unprefixed better-auth.session_token cookie." },
       "inviteBearer": { "type": "http", "scheme": "bearer", "description": "Single invite returned by claim-invite or replace-invite." }

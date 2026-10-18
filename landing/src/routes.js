@@ -1,6 +1,6 @@
 export const SITE_ORIGIN = 'https://www.agent-layer.tech'
 
-export const DEFAULT_DESCRIPTION = 'AgentLayer is wallet for agents, like OpenClaw and Claude Code. Make payments via x402, use stablecoins, swap assets, earn yield with DeFi, and buy tokenized stocks across the most popular chains.'
+export const DEFAULT_DESCRIPTION = 'AgentLayer Agent Wallet is a local wallet for AI agents like OpenClaw and Claude Code. Make x402 payments, use stablecoins, swap assets, and access DeFi across Solana, Base, and Ethereum.'
 
 export const ROUTES = {
   home: {
