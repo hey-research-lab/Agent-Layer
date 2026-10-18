@@ -162,7 +162,7 @@ def _friendly_label(value: str) -> str:
         "evm_wallet": "evm wallet",
         "evm_defi": "evm defi",
         "cross_chain": "cross-chain",
-        "btc": "btc",
+        "imd": "imd",
         "x402": "x402",
         "autonomous": "autonomous",
         "tool_invocations": "tool invocations",
@@ -376,8 +376,12 @@ def _html_table(
             value = row.get(field)
             if field == "key":
                 rendered = _friendly_label(str(value or ""))
-            elif field == "success_rate":
+            elif field.endswith("rate"):
                 rendered = _format_pct(value)
+            elif isinstance(value, str):
+                rendered = value
+            elif isinstance(value, float):
+                rendered = f"{value:,.1f}"
             else:
                 rendered = _format_int(value)
             cells.append(f"<td>{html.escape(rendered)}</td>")
@@ -405,6 +409,14 @@ def _render_telemetry_dashboard(stats: dict[str, Any]) -> str:
     x402 = dict(stats.get("x402") or {})
     npm = dict(stats.get("npm_downloads") or {})
     daily = dict(stats.get("daily") or {})
+    users = dict(stats.get("users") or {})
+    hosts = list(stats.get("hosts") or [])
+    excluded_note = (
+        f"excluding {_format_int(stats.get('excluded_install_ids', 0))} internal installs "
+        f"({_format_int(stats.get('excluded_events', 0))} events)"
+        if stats.get("excluded_install_ids")
+        else "no internal installs excluded (set TELEMETRY_EXCLUDE_INSTALL_IDS)"
+    )
     raw_json = html.escape(json.dumps(_legacy_stats_payload(stats), indent=2, sort_keys=True))
     downloads_chart = (
         _svg_line_chart(
@@ -517,6 +529,14 @@ def _render_telemetry_dashboard(stats: dict[str, Any]) -> str:
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 16px;
     }}
+    .grid-1 {{
+      display: grid;
+      gap: 16px;
+      margin-bottom: 16px;
+    }}
+    .table-card {{
+      overflow-x: auto;
+    }}
     .chart-card, .table-card, .raw-card {{
       border: 1px solid #e5e7eb;
       border-radius: 18px;
@@ -565,7 +585,7 @@ def _render_telemetry_dashboard(stats: dict[str, Any]) -> str:
     }}
     th, td {{
       text-align: left;
-      padding: 9px 0;
+      padding: 9px 12px 9px 0;
       border-bottom: 1px solid #f0f1f3;
     }}
     th {{
@@ -616,10 +636,21 @@ def _render_telemetry_dashboard(stats: dict[str, Any]) -> str:
         <div>window {html.escape(_format_int(stats.get("window_days", 0)))}d</div>
         <div>generated {html.escape(time.strftime("%Y-%m-%d %H:%M:%S"))}</div>
         <div>raw JSON: <code>?format=json</code></div>
+        <div>{html.escape(excluded_note)}</div>
       </div>
     </section>
 
     <section class="kpis">
+      <article class="kpi">
+        <div class="label">Wallet Users</div>
+        <div class="value">{html.escape(_format_int(users.get("wallet_users", 0)))}</div>
+        <div class="sub">new {html.escape(_format_int(users.get("new_wallet_users", 0)))} · 7d {html.escape(_format_int(users.get("wallet_wau", 0)))}</div>
+      </article>
+      <article class="kpi">
+        <div class="label">Returning Users</div>
+        <div class="value">{html.escape(_format_int(users.get("returning_users", 0)))}</div>
+        <div class="sub">used on 2+ days · executed tx {html.escape(_format_int(users.get("executing_users", 0)))}</div>
+      </article>
       <article class="kpi">
         <div class="label">Active Installs</div>
         <div class="value">{html.escape(_format_int(stats.get("active_installs", 0)))}</div>
@@ -661,17 +692,52 @@ def _render_telemetry_dashboard(stats: dict[str, Any]) -> str:
       {_svg_line_chart("Wallet-Active Installs", list(daily.get("wallet_active_installs") or []), accent="#dc2626", days=30)}
     </section>
 
+    <div class="section-title">Frameworks</div>
+    <section class="grid-1">
+      {_html_table("Usage by framework", hosts, fields=[
+        ("key", "host"),
+        ("plugin_installs", "plugin installs"),
+        ("launched_installs", "launched"),
+        ("sessions", "sessions"),
+        ("wallet_users", "wallet users"),
+        ("returning_users", "returning"),
+        ("tool_calls", "tool calls"),
+        ("calls_per_user", "calls/user"),
+        ("success_rate", "success"),
+      ], limit=12)}
+    </section>
+    <section class="grid-2">
+      {_html_table("Adoption funnel", list(users.get("funnel") or []), fields=[("key", "stage"), ("installs", "installs")], limit=8)}
+      {_html_table("Calls per wallet user", list(users.get("calls_per_user") or []), fields=[("key", "calls in window"), ("installs", "installs")], limit=8)}
+    </section>
+
     <div class="section-title">Composition</div>
     <section class="grid-3">
-      {_svg_bar_chart("Wallet Host Mix", list(stats.get("wallet_by_host") or []), accent="#111827")}
+      {_svg_bar_chart("Wallet Users by Host", [{"key": row.get("key"), "wallet_users": row.get("wallet_users", 0)} for row in sorted(hosts, key=lambda row: -int(row.get("wallet_users") or 0)) if row.get("wallet_users")], value_field="wallet_users", accent="#111827")}
       {_svg_bar_chart("Backend Mix", list(stats.get("by_backend") or []), accent="#b45309")}
       {_svg_bar_chart("Tool Categories", list(stats.get("by_tool_category") or []), accent="#7c3aed")}
     </section>
 
+    <div class="section-title">All Tools</div>
+    <section class="grid-1">
+      {_html_table("Tool calls", [{**row, "tool": row.get("key", "")} for row in stats.get("tools") or []], fields=[
+        ("tool", "tool"),
+        ("category", "category"),
+        ("calls", "calls"),
+        ("installs", "installs"),
+        ("success_rate", "success"),
+        ("previews", "previews"),
+        ("executes", "executes"),
+        ("hosts", "hosts"),
+        ("last_seen", "last seen"),
+      ], limit=300)}
+    </section>
+
     <div class="section-title">Detail</div>
     <section class="grid-2">
-      {_html_table("Top Tools", list(stats.get("by_tool") or []), fields=[("key", "tool"), ("calls", "calls"), ("installs", "installs")])}
+      {_html_table("Host × Tool", list(stats.get("host_tools") or []), fields=[("host", "host"), ("tool", "tool"), ("calls", "calls"), ("installs", "installs"), ("ok_calls", "ok")], limit=40)}
       {_html_table("Backend × Tool", list(stats.get("by_backend_tool") or []), fields=[("backend", "backend"), ("tool", "tool"), ("calls", "calls"), ("installs", "installs")], limit=30)}
+      {_html_table("Tool Failures", list(stats.get("tool_errors") or []), fields=[("tool", "tool"), ("error_class", "error class"), ("calls", "calls"), ("installs", "installs")], limit=20)}
       {_html_table("x402 Funnel", [
         {"key": "x402_pay_request calls", "calls": x402.get("pay_tool_invocations", 0)},
         {"key": "previewed", "calls": x402.get("previewed", 0)},

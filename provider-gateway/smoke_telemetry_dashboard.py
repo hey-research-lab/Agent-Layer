@@ -86,7 +86,11 @@ def main() -> None:
             assert "<svg" in html_response.text
             assert "Active Installs" in html_response.text
             assert "Wallet-Active Installs" in html_response.text
-            assert "Wallet Host Mix" in html_response.text
+            assert "Wallet Users by Host" in html_response.text
+            assert "Usage by framework" in html_response.text
+            assert "Adoption funnel" in html_response.text
+            # String cells must render as text, not be coerced to 0.
+            assert "<td>solana_local</td><td>get_wallet_balance</td>" in html_response.text
             assert "Events" in html_response.text
             assert "Downloads" in html_response.text
             assert "RPC Usage" in html_response.text

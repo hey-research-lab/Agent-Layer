@@ -4,8 +4,8 @@ Why this exists: we want to know how many people use the wallet and through whic
 host (Claude Code / Codex / Cursor / Hermes / OpenClaw) — nothing more. It deliberately
 records NO PII: no wallet addresses, balances, amounts, tx hashes, tool
 arguments, or secrets. Only a random local install id, the host name, the
-invoked tool's registered name, the backend family, the plugin version, and a
-success flag.
+invoked tool's registered name, the backend family, the plugin version, a
+success flag, the preview/execute mode, and a coarse error class.
 
 Design for a short-lived CLI subprocess:
   - `record()` appends one JSON line to a local spool file. This is instant and
@@ -37,6 +37,13 @@ from . import __version__
 from .config import DEFAULT_PROVIDER_GATEWAY_URL, resolve_openclaw_home
 
 ALLOWED_HOSTS = {"claude-code", "codex", "cursor", "hermes", "mcp", "openclaw"}
+ALLOWED_MODES = {"preview", "execute", "intent_preview", "intent_execute"}
+
+# Set by the MCP bridge (codex server.py, shared by Claude Code / Codex / Cursor /
+# universal MCP) on its wallet subprocesses. The bridge then records each
+# tool_invoke itself — it alone sees resident-worker reads and bridge-only
+# tools under their public names — so the CLI must not record it again.
+BRIDGE_ENV = "AGENT_WALLET_TELEMETRY_BRIDGE"
 
 SPOOL_NAME = "telemetry_spool.jsonl"
 ID_NAME = "telemetry_id"
@@ -72,6 +79,40 @@ def _host() -> str:
     return host if host in ALLOWED_HOSTS else "unknown"
 
 
+def bridge_records_tool_calls() -> bool:
+    return os.getenv(BRIDGE_ENV, "").strip() == "1"
+
+
+def tool_mode(arguments: Any) -> str:
+    """The preview/execute mode of a write-tool call, or "" for reads."""
+    if not isinstance(arguments, dict):
+        return ""
+    mode = str(arguments.get("mode") or "").strip().lower()
+    return mode if mode in ALLOWED_MODES else ""
+
+
+def classify_tool_error(code: Any = "", message: Any = "") -> str:
+    """Map a failure to a coarse class. Only the class leaves the machine."""
+    text = f"{code or ''} {message or ''}".lower()
+    if not text.strip():
+        return "unknown"
+    if "approval" in text or "confirm" in text:
+        return "approval"
+    if "insufficient" in text or "not enough" in text:
+        return "insufficient_funds"
+    if "rate limit" in text or "429" in text or "too many requests" in text:
+        return "rate_limited"
+    if "timeout" in text or "timed out" in text or "connection" in text or "network error" in text:
+        return "network"
+    if any(part in text for part in ("locked", "not installed", "not configured", "onboard", "boot key", "keychain")):
+        return "not_ready"
+    if any(part in text for part in ("invalid", "required", "must be", "unsupported", "not allowed", "validation")):
+        return "validation"
+    if any(part in text for part in ("provider", "upstream", "http ", "status 5")):
+        return "provider"
+    return "wallet"
+
+
 def _install_id() -> str:
     """Stable, random, non-identifying id for this install. Created once."""
     path = _home() / ID_NAME
@@ -102,6 +143,7 @@ def record(
     amount_bucket: str = "",
     settlement_status: str = "",
     error_class: str = "",
+    mode: str = "",
 ) -> None:
     """Append an anonymous event to the spool and best-effort flush. Never raises."""
     try:
@@ -123,10 +165,40 @@ def record(
             "settlement_status": settlement_status,
             "error_class": error_class,
         }
+        if mode in ALLOWED_MODES:
+            payload["mode"] = mode
         _append_spool(payload)
         _maybe_spawn_flush()
     except Exception:
         # Telemetry is never allowed to affect the wallet call.
+        pass
+
+
+def record_cli_invoke(tool: str, arguments_json: Any, *, backend: str, payload: Any) -> None:
+    """Record one ``openclaw_cli invoke`` tool call (Hermes, OpenClaw, cold paths).
+
+    Skipped when the MCP bridge launched this process: it records the call
+    itself, so recording here would double count. Never raises.
+    """
+    try:
+        if bridge_records_tool_calls():
+            return
+        try:
+            arguments = json.loads(arguments_json) if isinstance(arguments_json, str) else arguments_json
+        except ValueError:
+            arguments = None
+        result = payload if isinstance(payload, dict) else {}
+        ok = bool(result.get("ok", False))
+        record(
+            tool,
+            backend=backend,
+            ok=ok,
+            mode=tool_mode(arguments),
+            error_class="" if ok else classify_tool_error(
+                result.get("error_code") or result.get("code"), result.get("error")
+            ),
+        )
+    except Exception:
         pass
 
 
@@ -271,8 +343,15 @@ def _maybe_spawn_flush() -> None:
         return
     _mark_flush_attempt()
     try:
+        # The MCP bridge imports this module via a temporary sys.path entry, so
+        # PYTHONPATH may not reach the package; pass it explicitly.
+        env = dict(os.environ)
+        package_root = str(Path(__file__).resolve().parents[1])
+        current = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = f"{package_root}{os.pathsep}{current}" if current else package_root
         subprocess.Popen(
             [sys.executable, "-m", "agent_wallet.telemetry", "--flush"],
+            env=env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,

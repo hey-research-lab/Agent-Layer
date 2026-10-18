@@ -57,13 +57,16 @@ Implemented endpoints:
 
 ### Telemetry
 
-The wallet backend emits one fire-and-forget, anonymous event per tool invocation
-so we can measure adoption across hosts (Claude Code / Codex / Hermes / OpenClaw)
-without any PII. The ingest route is intentionally unauthenticated (events arrive
+The wallet emits one fire-and-forget, anonymous event per tool invocation
+so we can measure adoption across hosts (Claude Code / Codex / Cursor / Hermes /
+OpenClaw / universal MCP) without any PII. MCP hosts record in the shared bridge
+(`codex/plugins/agent-wallet/server.py`), which also emits `session_start` when a
+host launches it; Hermes and OpenClaw record in `openclaw_cli invoke`. The ingest route is intentionally unauthenticated (events arrive
 from every install) and validated against a strict allowlist in
 `telemetry_store.py`: only `event`, `install_id` (a random local UUID),
-`host`, `tool` (registered tool name), `backend`, `plugin_version`, `ok`, `ts`
-are accepted. Any extra field — and anything address-like in `tool` — is rejected
+`host`, `tool` (registered tool name), `backend`, `plugin_version`, `ok`, `ts`,
+`mode` (`preview`/`execute`/`intent_*` for write tools) and a coarse
+`error_class` for failed calls are accepted. Any extra field — and anything address-like in `tool` — is rejected
 (`422`). No wallet addresses, balances, amounts, tx hashes, tool arguments, or
 secrets are ever stored. x402 lifecycle events add only coarse, allowlisted
 dimensions: network, scheme, asset family, USD amount bucket, settlement status,
@@ -78,6 +81,8 @@ Config:
 - `TELEMETRY_DB_PATH` — SQLite path (default `./telemetry.db`; point at a mounted
   volume on Railway for durable history — the default file resets on redeploy)
 - `TELEMETRY_RATE_LIMIT_PER_MIN` — per-IP ingest cap (default `120`)
+- `TELEMETRY_EXCLUDE_INSTALL_IDS` — comma-separated install ids (our own dev and
+  test machines, from `~/.openclaw/telemetry_id`) hidden from every stat
 
 `GET /v1/telemetry/stats?window_days=30` is gated by the same bearer/machine
 token as `/v1/status` so raw numbers are not world-readable. In a browser
@@ -90,8 +95,13 @@ install activity:
 - `wallet_dau` — unique `install_id` values with at least one `tool_invoke`
   during the last 24 hours
 - `wallet_by_host` — wallet-specific breakdown by host/plugin
-- `by_backend_tool` — tool calls grouped by their recorded wallet backend;
-  useful for separating, for example, Bitcoin reads from EVM/Solana activity
+- `hosts` — per framework: plugin installs → launched (`session_start`) →
+  wallet users → returning users (tool calls on 2+ UTC days), calls and success
+- `users` — wallet users, new / returning / executing users, 7-day actives,
+  calls-per-user buckets and the install → wired → launched → used → returned funnel
+- `tools` — every tool with calls, installs, success rate, preview/execute split
+- `host_tools`, `tool_errors` — tool × host matrix and failures by error class
+- `by_backend_tool` — tool calls grouped by their recorded wallet backend
 
 For raw machine-readable JSON use:
 

@@ -51,14 +51,18 @@ ALLOWED_EVENTS = {
     "x402_payment_settled",
     "x402_payment_failed",
 }
-ALLOWED_HOSTS = {"claude-code", "codex", "hermes", "openclaw", "unknown"}
+# Must stay a superset of the client allowlist (agent_wallet/telemetry.py and
+# bin/openclaw-agent-wallet.mjs); a host missing here silently becomes "unknown".
+ALLOWED_HOSTS = {"claude-code", "codex", "cursor", "hermes", "mcp", "openclaw", "unknown"}
+# The BTC backend is retired: new events carrying it are counted as "unknown".
 ALLOWED_BACKENDS = {
     "solana_local",
-    "wdk_btc_local",
     "wdk_evm_local",
     "unknown",
     "",
 }
+# Write tools run as preview/execute (or intent_* for intent-bound tools).
+ALLOWED_MODES = {"preview", "execute", "intent_preview", "intent_execute", ""}
 
 _INSTALL_ID_RE = re.compile(r"^[0-9a-f\-]{8,64}$")
 # Tool names are registered identifiers (get_wallet_balance, transfer_sol, ...):
@@ -91,6 +95,7 @@ ALLOWED_KEYS = {
     "amount_bucket",
     "settlement_status",
     "error_class",
+    "mode",
 }
 
 MAX_BODY_BYTES = 2048
@@ -158,6 +163,10 @@ def validate_event(raw: Any) -> dict[str, Any]:
             raise TelemetryValidationError(f"{name} has invalid characters")
         return value
 
+    mode = str(raw.get("mode", "")).strip().lower()
+    if mode not in ALLOWED_MODES:
+        mode = ""
+
     ok_raw = raw.get("ok", True)
     if not isinstance(ok_raw, bool):
         raise TelemetryValidationError("ok must be a boolean")
@@ -185,6 +194,7 @@ def validate_event(raw: Any) -> dict[str, Any]:
         "amount_bucket": _x402_dimension("amount_bucket"),
         "settlement_status": _x402_dimension("settlement_status"),
         "error_class": _x402_dimension("error_class"),
+        "mode": mode if event == "tool_invoke" else "",
     }
 
 
@@ -207,6 +217,13 @@ _CORE_WALLET_TOOLS = {
     "get_wallet_portfolio",
     "issue_wallet_approval",
     "sign_wallet_message",
+}
+# Served by the MCP bridge itself (no wallet subprocess); only visible since the
+# bridge started recording tool calls.
+_BRIDGE_TOOLS = {
+    "get_wallet_overview",
+    "get_active_wallet_backend",
+    "set_wallet_backend",
 }
 
 
@@ -248,7 +265,7 @@ def _connect() -> sqlite3.Connection:
         conn.execute("ALTER TABLE events ADD COLUMN source TEXT NOT NULL DEFAULT ''")
     if "command" not in columns:
         conn.execute("ALTER TABLE events ADD COLUMN command TEXT NOT NULL DEFAULT ''")
-    for column in ("network", "scheme", "asset_family", "amount_bucket", "settlement_status", "error_class"):
+    for column in ("network", "scheme", "asset_family", "amount_bucket", "settlement_status", "error_class", "mode"):
         if column not in columns:
             conn.execute(f"ALTER TABLE events ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
     conn.execute(
@@ -281,8 +298,8 @@ def record_event(event: dict[str, Any]) -> None:
             """
             INSERT INTO events
                 (event, install_id, host, tool, backend, plugin_version, ok, client_ts, received_ts, source, command,
-                 network, scheme, asset_family, amount_bucket, settlement_status, error_class)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 network, scheme, asset_family, amount_bucket, settlement_status, error_class, mode)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event["event"],
@@ -302,6 +319,7 @@ def record_event(event: dict[str, Any]) -> None:
                 event["amount_bucket"],
                 event["settlement_status"],
                 event["error_class"],
+                event["mode"],
             ),
         )
         conn.commit()
@@ -317,15 +335,20 @@ def _tool_category(tool: str) -> str:
         return "autonomous"
     if tool.startswith("get_lifi_") or tool.startswith("swap_evm_lifi_") or tool.startswith("swap_solana_lifi_"):
         return "cross_chain"
-    if tool.startswith("get_btc_") or tool == "transfer_btc":
-        return "btc"
-    if tool in _CORE_WALLET_TOOLS:
+    if tool in _CORE_WALLET_TOOLS or tool in _BRIDGE_TOOLS:
+        return "core_wallet"
+    if tool.startswith("imd_"):
+        return "imd"
+    if tool == "get_transaction_activity":
         return "core_wallet"
     if tool.startswith("get_evm_") or tool.startswith("transfer_evm_") or tool == "set_evm_network":
-        if any(part in tool for part in ("aave", "lido", "morpho", "swap_quote")):
+        if any(part in tool for part in ("aave", "lido", "morpho", "uniswap", "swap_quote")):
             return "evm_defi"
         return "evm_wallet"
-    if tool.startswith("manage_evm_") or tool.startswith("swap_evm_") or tool == "get_uniswap_swap_quote":
+    if (
+        tool.startswith(("manage_evm_", "swap_evm_", "rebalance_evm_", "get_morpho_"))
+        or tool in {"get_uniswap_swap_quote", "search_uniswap_pairs"}
+    ):
         return "evm_defi"
     if tool.startswith("get_solana_") or tool in {
         "stake_sol_native",
@@ -371,7 +394,7 @@ def _daily_series(conn: sqlite3.Connection, since_ts: int, window_days: int) -> 
                COUNT(DISTINCT CASE WHEN event = 'tool_invoke' THEN install_id END) AS wallet_active_installs,
                SUM(CASE WHEN event = 'tool_invoke' THEN 1 ELSE 0 END) AS tool_invocations,
                SUM(CASE WHEN event = 'tool_invoke' AND ok = 1 THEN 1 ELSE 0 END) AS tool_successes
-        FROM events
+        FROM ev
         WHERE received_ts >= ?
         GROUP BY date(received_ts, 'unixepoch')
         ORDER BY day ASC
@@ -415,29 +438,333 @@ def _daily_series(conn: sqlite3.Connection, since_ts: int, window_days: int) -> 
 def _tool_category_breakdown(conn: sqlite3.Connection, since_ts: int) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT tool,
-               COUNT(*) AS calls,
-               COUNT(DISTINCT install_id) AS installs
-        FROM events
+        SELECT tool, install_id, COUNT(*) AS calls
+        FROM ev
         WHERE received_ts >= ?
+          AND event = 'tool_invoke'
           AND tool != ''
-        GROUP BY tool
+        GROUP BY tool, install_id
         """,
         (since_ts,),
     ).fetchall()
-    grouped: dict[str, dict[str, int | str]] = {}
-    for tool, calls, installs in rows:
+    calls_by_key: dict[str, int] = {}
+    installs_by_key: dict[str, set[str]] = {}
+    for tool, install_id, calls in rows:
         key = _tool_category(str(tool or ""))
-        current = grouped.setdefault(key, {"key": key, "calls": 0, "installs": 0})
-        current["calls"] = int(current["calls"]) + int(calls or 0)
-        current["installs"] = int(current["installs"]) + int(installs or 0)
+        calls_by_key[key] = calls_by_key.get(key, 0) + int(calls or 0)
+        # Summing per-tool distinct counts would count one install once per
+        # tool it used; keep a set so each install counts once per category.
+        installs_by_key.setdefault(key, set()).add(str(install_id))
     return sorted(
         (
-            {"key": str(item["key"]), "calls": int(item["calls"]), "installs": int(item["installs"])}
-            for item in grouped.values()
+            {"key": key, "calls": calls, "installs": len(installs_by_key.get(key, ()))}
+            for key, calls in calls_by_key.items()
         ),
         key=lambda item: (-item["calls"], item["key"]),
     )
+
+
+def _excluded_install_ids() -> list[str]:
+    """Install ids to hide from stats (our own dev/test machines).
+
+    ``TELEMETRY_EXCLUDE_INSTALL_IDS`` is a comma/space separated list. Ids are
+    validated against the install_id format so they are safe to inline in SQL.
+    """
+    raw = os.getenv("TELEMETRY_EXCLUDE_INSTALL_IDS", "")
+    ids = {part.strip().lower() for part in re.split(r"[,\s]+", raw) if part.strip()}
+    return sorted(i for i in ids if _INSTALL_ID_RE.match(i))
+
+
+def _create_scoped_view(conn: sqlite3.Connection, excluded: list[str]) -> None:
+    """(Re)create the temp view ``ev`` that every stats query reads from."""
+    conn.execute("DROP VIEW IF EXISTS temp.ev")
+    if excluded:
+        id_list = ",".join(f"'{i}'" for i in excluded)
+        conn.execute(f"CREATE TEMP VIEW ev AS SELECT * FROM main.events WHERE install_id NOT IN ({id_list})")
+    else:
+        conn.execute("CREATE TEMP VIEW ev AS SELECT * FROM main.events")
+
+
+def _tool_breakdown(conn: sqlite3.Connection, since_ts: int, limit: int = 300) -> list[dict[str, Any]]:
+    """Every tool with call volume, reach, success and write-mode split."""
+    rows = conn.execute(
+        """
+        SELECT tool,
+               COUNT(*) AS calls,
+               COUNT(DISTINCT install_id) AS installs,
+               SUM(CASE WHEN ok = 1 THEN 1 ELSE 0 END) AS ok_calls,
+               SUM(CASE WHEN mode IN ('preview', 'intent_preview') THEN 1 ELSE 0 END) AS previews,
+               SUM(CASE WHEN mode IN ('execute', 'intent_execute') THEN 1 ELSE 0 END) AS executes,
+               COUNT(DISTINCT host) AS hosts,
+               MAX(received_ts) AS last_ts
+        FROM ev
+        WHERE received_ts >= ?
+          AND event = 'tool_invoke'
+          AND tool != ''
+        GROUP BY tool
+        ORDER BY calls DESC, tool ASC
+        LIMIT ?
+        """,
+        (since_ts, limit),
+    ).fetchall()
+    return [
+        {
+            "key": str(row[0]),
+            "category": _tool_category(str(row[0])),
+            "calls": int(row[1] or 0),
+            "installs": int(row[2] or 0),
+            "ok_calls": int(row[3] or 0),
+            "success_rate": (int(row[3] or 0) / int(row[1])) if row[1] else None,
+            "previews": int(row[4] or 0),
+            "executes": int(row[5] or 0),
+            "hosts": int(row[6] or 0),
+            "last_seen": time.strftime("%Y-%m-%d", time.gmtime(int(row[7] or 0))),
+        }
+        for row in rows
+    ]
+
+
+def _host_tool_breakdown(conn: sqlite3.Connection, since_ts: int, limit: int = 400) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT host, tool,
+               COUNT(*) AS calls,
+               COUNT(DISTINCT install_id) AS installs,
+               SUM(CASE WHEN ok = 1 THEN 1 ELSE 0 END) AS ok_calls
+        FROM ev
+        WHERE received_ts >= ?
+          AND event = 'tool_invoke'
+          AND tool != ''
+        GROUP BY host, tool
+        ORDER BY calls DESC, host ASC, tool ASC
+        LIMIT ?
+        """,
+        (since_ts, limit),
+    ).fetchall()
+    return [
+        {
+            "host": str(row[0]),
+            "tool": str(row[1]),
+            "calls": int(row[2] or 0),
+            "installs": int(row[3] or 0),
+            "ok_calls": int(row[4] or 0),
+        }
+        for row in rows
+    ]
+
+
+def _tool_error_breakdown(conn: sqlite3.Connection, since_ts: int, limit: int = 50) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT tool, error_class, COUNT(*) AS calls, COUNT(DISTINCT install_id) AS installs
+        FROM ev
+        WHERE received_ts >= ?
+          AND event = 'tool_invoke'
+          AND ok = 0
+        GROUP BY tool, error_class
+        ORDER BY calls DESC, tool ASC
+        LIMIT ?
+        """,
+        (since_ts, limit),
+    ).fetchall()
+    return [
+        {
+            "tool": str(row[0]),
+            "error_class": str(row[1] or "unclassified"),
+            "calls": int(row[2] or 0),
+            "installs": int(row[3] or 0),
+        }
+        for row in rows
+    ]
+
+
+# Frameworks reported in the per-host table, in display order.
+_HOST_ORDER = ("claude-code", "codex", "cursor", "hermes", "openclaw", "mcp", "unknown")
+
+
+def _host_summary(conn: sqlite3.Connection, since_ts: int) -> list[dict[str, Any]]:
+    """Per-framework adoption: installed -> launched -> used -> returned.
+
+    * plugin_installs: installs that successfully wired the plugin into this host
+    * launched_installs: installs whose host actually started the MCP bridge
+      (``session_start``; MCP hosts only, emitted since the bridge recorder)
+    * wallet_users: installs that made at least one tool call from this host
+    * returning_users: wallet users with tool calls on 2+ distinct UTC days
+    """
+    stats: dict[str, dict[str, Any]] = {}
+
+    def _row(host: str) -> dict[str, Any]:
+        return stats.setdefault(
+            host,
+            {
+                "key": host,
+                "plugin_installs": 0,
+                "launched_installs": 0,
+                "sessions": 0,
+                "wallet_users": 0,
+                "returning_users": 0,
+                "tool_calls": 0,
+                "ok_calls": 0,
+                "success_rate": None,
+                "calls_per_user": None,
+            },
+        )
+
+    for host, installs in conn.execute(
+        """
+        SELECT host, COUNT(DISTINCT install_id) FROM ev
+        WHERE received_ts >= ? AND event = 'plugin_install_success'
+        GROUP BY host
+        """,
+        (since_ts,),
+    ).fetchall():
+        _row(str(host))["plugin_installs"] = int(installs or 0)
+
+    for host, sessions, installs in conn.execute(
+        """
+        SELECT host, COUNT(*), COUNT(DISTINCT install_id) FROM ev
+        WHERE received_ts >= ? AND event = 'session_start'
+        GROUP BY host
+        """,
+        (since_ts,),
+    ).fetchall():
+        row = _row(str(host))
+        row["sessions"] = int(sessions or 0)
+        row["launched_installs"] = int(installs or 0)
+
+    for host, users, calls, ok_calls in conn.execute(
+        """
+        SELECT host, COUNT(DISTINCT install_id), COUNT(*), SUM(CASE WHEN ok = 1 THEN 1 ELSE 0 END)
+        FROM ev
+        WHERE received_ts >= ? AND event = 'tool_invoke'
+        GROUP BY host
+        """,
+        (since_ts,),
+    ).fetchall():
+        row = _row(str(host))
+        row["wallet_users"] = int(users or 0)
+        row["tool_calls"] = int(calls or 0)
+        row["ok_calls"] = int(ok_calls or 0)
+        row["success_rate"] = (row["ok_calls"] / row["tool_calls"]) if row["tool_calls"] else None
+        row["calls_per_user"] = (row["tool_calls"] / row["wallet_users"]) if row["wallet_users"] else None
+
+    for host, returning in conn.execute(
+        """
+        SELECT host, COUNT(*) FROM (
+            SELECT host, install_id
+            FROM ev
+            WHERE received_ts >= ? AND event = 'tool_invoke'
+            GROUP BY host, install_id
+            HAVING COUNT(DISTINCT date(received_ts, 'unixepoch')) >= 2
+        )
+        GROUP BY host
+        """,
+        (since_ts,),
+    ).fetchall():
+        _row(str(host))["returning_users"] = int(returning or 0)
+
+    order = {host: idx for idx, host in enumerate(_HOST_ORDER)}
+    return sorted(stats.values(), key=lambda row: (order.get(row["key"], len(order)), row["key"]))
+
+
+def _user_summary(conn: sqlite3.Connection, since_ts: int) -> dict[str, Any]:
+    """Real-usage signals that installer noise (CI, retries, npx) can't inflate."""
+    now = int(time.time())
+
+    def _scalar(sql: str, args: tuple = ()) -> int:
+        row = conn.execute(sql, args).fetchone()
+        return int(row[0]) if row and row[0] is not None else 0
+
+    per_install = conn.execute(
+        """
+        SELECT install_id,
+               COUNT(*) AS calls,
+               COUNT(DISTINCT date(received_ts, 'unixepoch')) AS days,
+               SUM(CASE WHEN mode IN ('execute', 'intent_execute') THEN 1 ELSE 0 END) AS executes
+        FROM ev
+        WHERE received_ts >= ? AND event = 'tool_invoke'
+        GROUP BY install_id
+        """,
+        (since_ts,),
+    ).fetchall()
+    wallet_users = len(per_install)
+    returning = sum(1 for row in per_install if int(row[2] or 0) >= 2)
+    engaged = sum(1 for row in per_install if int(row[1] or 0) >= 5)
+    executing = sum(1 for row in per_install if int(row[3] or 0) > 0)
+    first_seen_in_window = _scalar(
+        """
+        SELECT COUNT(*) FROM (
+            SELECT install_id, MIN(received_ts) AS first_ts
+            FROM ev
+            WHERE event = 'tool_invoke'
+            GROUP BY install_id
+        )
+        WHERE first_ts >= ?
+        """,
+        (since_ts,),
+    )
+    call_buckets = {"1": 0, "2-4": 0, "5-19": 0, "20-99": 0, "100+": 0}
+    for row in per_install:
+        calls = int(row[1] or 0)
+        if calls <= 1:
+            call_buckets["1"] += 1
+        elif calls <= 4:
+            call_buckets["2-4"] += 1
+        elif calls <= 19:
+            call_buckets["5-19"] += 1
+        elif calls <= 99:
+            call_buckets["20-99"] += 1
+        else:
+            call_buckets["100+"] += 1
+
+    # Funnel over installs seen in the window. Each stage is a subset of the
+    # previous one so drop-off reads directly.
+    funnel_rows = conn.execute(
+        """
+        SELECT install_id,
+               MAX(CASE WHEN event = 'install_success' THEN 1 ELSE 0 END),
+               MAX(CASE WHEN event = 'plugin_install_success' THEN 1 ELSE 0 END),
+               MAX(CASE WHEN event = 'session_start' THEN 1 ELSE 0 END),
+               MAX(CASE WHEN event = 'tool_invoke' THEN 1 ELSE 0 END)
+        FROM ev
+        WHERE received_ts >= ?
+        GROUP BY install_id
+        """,
+        (since_ts,),
+    ).fetchall()
+    installed = [row for row in funnel_rows if row[1]]
+    wired = [row for row in installed if row[2]]
+    used = [row for row in wired if row[4]]
+    returning_ids = {str(row[0]) for row in per_install if int(row[2] or 0) >= 2}
+    funnel = [
+        {"key": "npm install succeeded", "installs": len(installed)},
+        {"key": "plugin wired into a host", "installs": len(wired)},
+        {"key": "host launched the bridge", "installs": sum(1 for row in wired if row[3])},
+        {"key": "made a wallet tool call", "installs": len(used)},
+        {"key": "came back another day", "installs": sum(1 for row in used if str(row[0]) in returning_ids)},
+    ]
+
+    return {
+        "wallet_users": wallet_users,
+        "new_wallet_users": first_seen_in_window,
+        "returning_users": returning,
+        "engaged_users": engaged,
+        "executing_users": executing,
+        "wallet_dau": _scalar(
+            "SELECT COUNT(DISTINCT install_id) FROM ev WHERE received_ts >= ? AND event = 'tool_invoke'",
+            (now - 86400,),
+        ),
+        "wallet_wau": _scalar(
+            "SELECT COUNT(DISTINCT install_id) FROM ev WHERE received_ts >= ? AND event = 'tool_invoke'",
+            (now - 7 * 86400,),
+        ),
+        "launched_installs": _scalar(
+            "SELECT COUNT(DISTINCT install_id) FROM ev WHERE received_ts >= ? AND event = 'session_start'",
+            (since_ts,),
+        ),
+        "calls_per_user": [{"key": key, "installs": value} for key, value in call_buckets.items()],
+        "funnel": funnel,
+    }
 
 
 def _backend_tool_breakdown(conn: sqlite3.Connection, since_ts: int, limit: int = 200) -> list[dict[str, Any]]:
@@ -447,7 +774,7 @@ def _backend_tool_breakdown(conn: sqlite3.Connection, since_ts: int, limit: int 
         SELECT backend, tool,
                COUNT(*) AS calls,
                COUNT(DISTINCT install_id) AS installs
-        FROM events
+        FROM ev
         WHERE received_ts >= ?
           AND event = 'tool_invoke'
           AND backend != ''
@@ -483,7 +810,7 @@ def _success_rate_breakdown(conn: sqlite3.Connection, since_ts: int) -> list[dic
             f"""
             SELECT COUNT(*),
                    SUM(CASE WHEN ok = 1 THEN 1 ELSE 0 END)
-            FROM events
+            FROM ev
             WHERE received_ts >= ?
               AND event IN ({placeholders})
             """,
@@ -507,14 +834,14 @@ def _x402_summary(conn: sqlite3.Connection, since_ts: int) -> dict[str, Any]:
 
     def _count(event: str) -> int:
         row = conn.execute(
-            "SELECT COUNT(*) FROM events WHERE received_ts >= ? AND event = ?",
+            "SELECT COUNT(*) FROM ev WHERE received_ts >= ? AND event = ?",
             (since_ts, event),
         ).fetchone()
         return int(row[0] or 0) if row else 0
 
     tool_invocations_row = conn.execute(
         """
-        SELECT COUNT(*) FROM events
+        SELECT COUNT(*) FROM ev
         WHERE received_ts >= ? AND event = 'tool_invoke' AND tool = 'x402_pay_request'
         """,
         (since_ts,),
@@ -530,7 +857,7 @@ def _x402_summary(conn: sqlite3.Connection, since_ts: int) -> dict[str, Any]:
         rows = conn.execute(
             f"""
             SELECT {column}, COUNT(*)
-            FROM events
+            FROM ev
             WHERE received_ts >= ?
               AND event IN ('x402_payment_attempted', 'x402_payment_settled', 'x402_payment_failed')
               AND {column} != ''
@@ -801,25 +1128,27 @@ def npm_downloads_summary() -> dict[str, Any]:
 def summary(window_days: int = 30) -> dict[str, Any]:
     """Aggregate adoption metrics over the trailing ``window_days``."""
     since = int(time.time()) - window_days * 86400
+    excluded = _excluded_install_ids()
     with _DB_LOCK:
         conn = _connect()
+        _create_scoped_view(conn, excluded)
 
         def _scalar(sql: str, args: tuple = ()) -> int:
             row = conn.execute(sql, args).fetchone()
             return int(row[0]) if row and row[0] is not None else 0
 
         total_events = _scalar(
-            "SELECT COUNT(*) FROM events WHERE received_ts >= ?", (since,)
+            "SELECT COUNT(*) FROM ev WHERE received_ts >= ?", (since,)
         )
-        active_installs = _scalar("SELECT COUNT(DISTINCT install_id) FROM events WHERE received_ts >= ?", (since,))
+        active_installs = _scalar("SELECT COUNT(DISTINCT install_id) FROM ev WHERE received_ts >= ?", (since,))
         wallet_active_installs = _scalar(
-            "SELECT COUNT(DISTINCT install_id) FROM events WHERE received_ts >= ? AND event = 'tool_invoke'",
+            "SELECT COUNT(DISTINCT install_id) FROM ev WHERE received_ts >= ? AND event = 'tool_invoke'",
             (since,),
         )
         day_ago = int(time.time()) - 86400
-        dau = _scalar("SELECT COUNT(DISTINCT install_id) FROM events WHERE received_ts >= ?", (day_ago,))
+        dau = _scalar("SELECT COUNT(DISTINCT install_id) FROM ev WHERE received_ts >= ?", (day_ago,))
         wallet_dau = _scalar(
-            "SELECT COUNT(DISTINCT install_id) FROM events WHERE received_ts >= ? AND event = 'tool_invoke'",
+            "SELECT COUNT(DISTINCT install_id) FROM ev WHERE received_ts >= ? AND event = 'tool_invoke'",
             (day_ago,),
         )
 
@@ -838,7 +1167,7 @@ def summary(window_days: int = 30) -> dict[str, Any]:
                 SELECT {column} AS k,
                        COUNT(*) AS calls,
                        COUNT(DISTINCT install_id) AS installs
-                FROM events
+                FROM ev
                 WHERE received_ts >= ?
                   {value_filter}
                   {event_clause}
@@ -852,16 +1181,22 @@ def summary(window_days: int = 30) -> dict[str, Any]:
                 {"key": r[0], "calls": int(r[1]), "installs": int(r[2])} for r in rows
             ]
 
-        ok_calls = _scalar(
-            "SELECT COUNT(*) FROM events WHERE received_ts >= ? AND ok = 1", (since,)
-        )
+        excluded_events = _scalar(
+            "SELECT COUNT(*) FROM main.events WHERE received_ts >= ?", (since,)
+        ) - total_events
         by_event = _breakdown("event")
         by_host = _breakdown("host")
         wallet_by_host = _breakdown("host", event_filter="tool_invoke")
-        by_tool = _breakdown("tool", non_empty=True)
+        by_tool = _breakdown("tool", 100, non_empty=True, event_filter="tool_invoke")
+        tools = _tool_breakdown(conn, since)
+        host_tools = _host_tool_breakdown(conn, since)
+        tool_errors = _tool_error_breakdown(conn, since)
+        hosts = _host_summary(conn, since)
+        users = _user_summary(conn, since)
+        by_mode = _breakdown("mode", non_empty=True, event_filter="tool_invoke")
         by_backend_tool = _backend_tool_breakdown(conn, since)
         by_tool_category = _tool_category_breakdown(conn, since)
-        by_backend = _breakdown("backend", non_empty=True)
+        by_backend = _breakdown("backend", non_empty=True, event_filter="tool_invoke")
         by_version = _breakdown("plugin_version")
         by_source = _breakdown("source", non_empty=True)
         by_command = _breakdown("command", non_empty=True)
@@ -869,7 +1204,10 @@ def summary(window_days: int = 30) -> dict[str, Any]:
         x402 = _x402_summary(conn, since)
         daily = _daily_series(conn, since, window_days)
 
-    success_rate = (ok_calls / total_events) if total_events else None
+    # Overall success is about wallet tool calls; installer events have their
+    # own families in success_by_family.
+    tool_family = next((row for row in success_by_family if row["key"] == "tool_invocations"), {})
+    success_rate = tool_family.get("success_rate")
     npm_downloads = npm_downloads_summary()
     if npm_downloads.get("ok"):
         daily_downloads = list(npm_downloads.get("daily") or [])
@@ -885,6 +1223,14 @@ def summary(window_days: int = 30) -> dict[str, Any]:
         "dau": dau,
         "wallet_dau": wallet_dau,
         "success_rate": success_rate,
+        "excluded_install_ids": len(excluded),
+        "excluded_events": excluded_events,
+        "users": users,
+        "hosts": hosts,
+        "tools": tools,
+        "host_tools": host_tools,
+        "tool_errors": tool_errors,
+        "by_mode": by_mode,
         "by_event": by_event,
         "by_host": by_host,
         "wallet_by_host": wallet_by_host,

@@ -272,7 +272,85 @@ def _cli_env(package_root: Path) -> dict[str, str]:
     # Keep adoption telemetry attributable to Codex unless a caller explicitly
     # supplies a host tag (for example, a shared MCP launcher).
     env.setdefault("AGENT_WALLET_HOST", "codex")
+    if _bridge_telemetry() is not None:
+        # This bridge records every tool_invoke itself (see _record_bridge_tool_call);
+        # tell the wallet CLI / read worker not to record it a second time.
+        env["AGENT_WALLET_TELEMETRY_BRIDGE"] = "1"
     return env
+
+
+_TELEMETRY_UNLOADED = object()
+_telemetry_module: Any = _TELEMETRY_UNLOADED
+
+
+def _bridge_telemetry() -> Any:
+    """agent_wallet.telemetry loaded into this process, or None. Fail-open."""
+    global _telemetry_module
+    if _telemetry_module is not _TELEMETRY_UNLOADED:
+        return _telemetry_module
+    _telemetry_module = None
+    try:
+        package_root_text = str(_resolve_package_root())
+        inserted = package_root_text not in sys.path
+        if inserted:
+            sys.path.insert(0, package_root_text)
+        try:
+            from agent_wallet import telemetry
+
+            if hasattr(telemetry, "classify_tool_error"):
+                _telemetry_module = telemetry
+        finally:
+            if inserted:
+                try:
+                    sys.path.remove(package_root_text)
+                except ValueError:
+                    pass
+    except Exception:
+        pass
+    return _telemetry_module
+
+
+def _record_bridge_tool_call(tool_name: str, params: dict[str, Any], error: BaseException | None) -> None:
+    """Record one MCP tool call under its public name. Never raises.
+
+    The bridge is the only layer that sees every call: resident-worker reads,
+    bridge-only tools (get_wallet_overview, set_wallet_backend, ...) and cold
+    CLI invokes alike.
+    """
+    telemetry = _bridge_telemetry()
+    if telemetry is None:
+        return
+    try:
+        requested_backend = params.get("backend")
+        backend = (
+            _normalize_wallet_backend(requested_backend)
+            if requested_backend is not None
+            else _active_backend_for_tool(tool_name)
+        )
+    except Exception:
+        backend = ""
+    try:
+        telemetry.record(
+            tool_name,
+            backend=backend,
+            ok=error is None,
+            mode=telemetry.tool_mode(params),
+            error_class=""
+            if error is None
+            else telemetry.classify_tool_error(getattr(error, "code", ""), str(error)),
+        )
+    except Exception:
+        pass
+
+
+def _record_bridge_session_start() -> None:
+    telemetry = _bridge_telemetry()
+    if telemetry is None:
+        return
+    try:
+        telemetry.record("", event="session_start")
+    except Exception:
+        pass
 
 
 def _canonical_json_text(payload: dict[str, Any]) -> str:
@@ -1634,6 +1712,15 @@ def build_server():
 
     async def _dispatch(tool_name: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         params = params or {}
+        try:
+            result = await _route(tool_name, params)
+        except Exception as exc:
+            _record_bridge_tool_call(tool_name, params, exc)
+            raise
+        _record_bridge_tool_call(tool_name, params, None)
+        return result
+
+    async def _route(tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
         if tool_name == "get_wallet_overview":
             return await _handle_get_wallet_overview(params)
         if tool_name == "get_active_wallet_backend":
@@ -1670,6 +1757,9 @@ def build_server():
 
 def main() -> None:
     _install_termination_signal_handlers()
+    # Bridge-recorded telemetry must carry the same host tag as the subprocesses.
+    os.environ.setdefault("AGENT_WALLET_HOST", "codex")
+    _record_bridge_session_start()
     _prewarm_resident_read_worker()
     build_server().run(show_banner=False)
 

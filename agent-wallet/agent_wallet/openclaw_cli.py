@@ -12,10 +12,10 @@ from typing import Any
 from agent_wallet.wallet_layer.base import WalletBackendError
 
 try:  # telemetry is optional and must never break the CLI
-    from agent_wallet.telemetry import record as _telemetry_record
+    from agent_wallet.telemetry import record_cli_invoke as _telemetry_record_cli_invoke
     from agent_wallet.telemetry import record_x402_lifecycle as _telemetry_record_x402_lifecycle
 except Exception:  # pragma: no cover - defensive
-    def _telemetry_record(*_args: Any, **_kwargs: Any) -> None:
+    def _telemetry_record_cli_invoke(*_args: Any, **_kwargs: Any) -> None:
         return None
 
     def _telemetry_record_x402_lifecycle(*_args: Any, **_kwargs: Any) -> None:
@@ -629,22 +629,24 @@ def main() -> int:
         # onboard/wallet-create/unlock/import — those touch secrets). Records
         # just the tool name + backend family + failure flag; never raises.
         if getattr(args, "command", "") == "invoke":
-            _telemetry_record(
+            _telemetry_record_cli_invoke(
                 getattr(args, "tool", ""),
+                getattr(args, "arguments_json", None),
                 backend=str(locals().get("config", {}).get("backend", "") or ""),
-                ok=False,
+                payload=_error_payload_for_exception(exc),
             )
         print(json.dumps(_error_payload_for_exception(exc)), file=sys.stderr)
         return 1
 
     if getattr(args, "command", "") == "invoke":
-        _telemetry_record(
+        # Adapter-level failures are returned as a normal JSON result, so the
+        # CLI process still exits successfully. Telemetry must reflect the tool
+        # result rather than the subprocess exit status.
+        _telemetry_record_cli_invoke(
             getattr(args, "tool", ""),
+            getattr(args, "arguments_json", None),
             backend=str(config.get("backend", "") or ""),
-            # Adapter-level failures are returned as a normal JSON result, so
-            # the CLI process still exits successfully. Telemetry must reflect
-            # the tool result rather than the subprocess exit status.
-            ok=bool(payload.get("ok", False)) if isinstance(payload, dict) else False,
+            payload=payload,
         )
         _telemetry_record_x402_lifecycle(getattr(args, "tool", ""), payload)
 
