@@ -37,7 +37,6 @@
     "install-from-github.sh",
     "README.md",
     "CHANGELOG.md",
-    "RELEASING.md",
     "LICENSE*",
     "agent-wallet/agent_wallet/",
     "agent-wallet/scripts/",

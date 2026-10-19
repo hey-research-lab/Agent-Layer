@@ -18,14 +18,13 @@ INCLUDED_ROOT_FILES = [
     "CHANGELOG.md",
     "LICENSE",
     "README.md",
-    "RELEASING.md",
     "VERSION",
     "install-from-github.sh",
     "requirements.txt",
     "setup.sh",
 ]
 # Must cover every setup.sh require_path and mirror the npm package `files`
-# allowlist (RELEASING.md "What Ships") — the bundle is the same runtime users
+# allowlist — the bundle is the same runtime users
 # get from npx, just delivered as a GitHub Release asset.
 INCLUDED_TOP_LEVEL_DIRS = [
     ".claude-plugin",

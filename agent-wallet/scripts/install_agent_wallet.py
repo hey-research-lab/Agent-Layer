@@ -26,7 +26,6 @@ INCLUDED_RUNTIME_ROOT_FILES = [
     "AGENTS.md",
     "README.md",
     "CHANGELOG.md",
-    "RELEASING.md",
     "install-from-github.sh",
     "requirements.txt",
     "setup.sh",

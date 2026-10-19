@@ -31,7 +31,6 @@ def main() -> None:
         "CHANGELOG.md",
         "LICENSE",
         "README.md",
-        "RELEASING.md",
         "VERSION",
         "install-from-github.sh",
         "requirements.txt",

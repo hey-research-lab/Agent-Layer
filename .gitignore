@@ -124,3 +124,10 @@ agent-wallet/AGENT_WALLET_PLAN.md
 agent-wallet/X402_BUYER_INTEGRATION_PLAN.md
 agent-wallet/AUTONOMOUS_EXECUTION_PLAN.md
 landing/docs/plans/
+
+# Maintainer release notes (kept locally, not tracked)
+/RELEASING.md
+/AGENT_RELEASES.md
+
+# Local `npx skills` install state
+/skills-lock.json
