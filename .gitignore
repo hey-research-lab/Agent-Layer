@@ -102,3 +102,16 @@ benchmarks/
 # Local worktree for the future public ChatGPT x402 plugin. It deliberately
 # forks the production MCP while the directory-facing app is developed.
 x402-chatgpt-plugin/
+
+# graphify generated output (kept locally, not tracked)
+graphify-out/
+.graphify_python
+
+# Local notes and retired experiments (kept locally, not tracked)
+/architecture-corpus/
+/agent-a2a-gateway/
+/solana-8004/
+
+# Locally installed copies of the agent-layer skill (canonical source: skills/agent-layer)
+/.agents/skills/
+/.claude/skills/
