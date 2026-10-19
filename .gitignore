@@ -115,3 +115,12 @@ graphify-out/
 # Locally installed copies of the agent-layer skill (canonical source: skills/agent-layer)
 /.agents/skills/
 /.claude/skills/
+
+# Astro generated cache
+docs/.astro/
+
+# Completed or superseded planning docs (kept locally, not tracked)
+agent-wallet/AGENT_WALLET_PLAN.md
+agent-wallet/X402_BUYER_INTEGRATION_PLAN.md
+agent-wallet/AUTONOMOUS_EXECUTION_PLAN.md
+landing/docs/plans/
